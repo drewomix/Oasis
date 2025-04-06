@@ -4,8 +4,8 @@ import { Agent } from "./AgentInterface";
 import { AgentExecutor, createReactAgent } from "langchain/agents";
 import { SearchToolForAgents } from "./tools/SearchToolForAgents";
 import { PromptTemplate } from "@langchain/core/prompts";
-import { LLMProvider } from "@augmentos/utils";
-import { wrapText } from "@augmentos/utils";
+import { LLMProvider } from "../utils";
+import { wrapText } from "../utils";
 
 interface QuestionAnswer {
     insight: string;
