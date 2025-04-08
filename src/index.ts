@@ -21,6 +21,7 @@ const explicitWakeWords = [
   "hey miara", "he miara", "hey mia", "he mia", "hey mural", "he mural",
   "hey amira", "hey myra", "he myra", "hay mira", "hai mira", "hey-mira",
   "he-mira", "heymira", "heymara", "hey mirah", "he mirah", "hey meera", "he meera",
+  "Amira", "amira", "a mira", "a mirror"
 ];
 
 /**

@@ -18,7 +18,7 @@ jobs:
         timeout-minutes: 30
         run: exec porter apply -f ./porter.yaml
         env:
-          PORTER_APP_NAME: notify
+          PORTER_APP_NAME: mira
           PORTER_NAMESPACE: prod
           NODE_ENV: production
           PORTER_CLUSTER: "4689"
