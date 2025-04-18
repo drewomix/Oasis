@@ -6,10 +6,30 @@ import { SearchToolForAgents } from "./tools/SearchToolForAgents";
 import { PromptTemplate } from "@langchain/core/prompts";
 import { LLMProvider } from "../utils";
 import { wrapText } from "../utils";
+import { AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { Tool } from "langchain/tools";
 
 interface QuestionAnswer {
     insight: string;
 }
+
+const systemPromptBlueprint = `You are an intelligent assistant that is running on the smart glasses of a user. They sometimes directly talk to you by saying a wake word and then asking a question (User Query). Answer the User Query to the best of your ability. Try to infer the User Query intent even if they don't give enough info. The query may contain some extra unrelated speech not related to the query - ignore any noise to answer just the user's intended query. Make your answer concise, leave out filler words, make the answer high entropy, answer in 15 words or less (no newlines), but don't be overly brief (e.g. for weather, give temp. and rain). Use telegraph style writing.
+
+Utilize available tools when necessary and adhere to the following guidelines:
+1. Invoke the "Search Engine" tool for confirming facts or retrieving extra details. Use the Search Engine tool to search the web for information about the user's query whenever you don't have enough information to answer.
+2. Use any other tools at your disposal as appropriate.
+3. You should think out loud before you answer. Come up with a plan for how to determine the answer accurately and then execute the plan.
+4. Keep your final answer brief (fewer than 15 words).
+5. When you have enough information to answer, output your final answer on a new line prefixed by "Final Answer:" followed immediately by a concise answer:
+   "Final Answer: <concise answer>"
+6. If the query is empty, nonsensical, or useless, return Final Answer: "No query provided."
+7. For context, today's date is ${new Date().toUTCString().split(' ').slice(0,4).join(' ')}.
+
+Tools:
+{tool_names}
+
+Remember to always include the Final Answer: marker in your final response.`;
 
 const agentPromptBlueprint = `You are an intelligent assistant that is running on the smart glasses of a user. They sometimes directly talk to you by saying a wake word and then asking a question (User Query). Answer the User Query to the best of your ability. Try to infer the User Query intent even if they don't give enough info. The query may contain some extra unrelated speech not related to the query - ignore any noise to answer just the user's intended query. Make your answer concise, leave out filler words, make the answer high entropy, answer in 15 words or less (no newlines), but don't be overly brief (e.g. for weather, give temp. and rain). Use telegraph style writing.
 
@@ -29,8 +49,6 @@ User Query:
 {query}
 
 Tools:
-{tools}
-Tool Names:
 {tool_names}
 Agent Scratchpad:
 {agent_scratchpad}
@@ -43,7 +61,9 @@ export class MiraAgent implements Agent {
   public agentDescription =
     "Answers user queries from smart glasses using conversation context and history.";
   public agentPrompt = agentPromptBlueprint;
-  public agentTools = [new SearchToolForAgents()];
+  public agentTools:Tool[] = [new SearchToolForAgents()];
+
+  public messages: BaseMessage[] = [];
 
   /**
    * Parses the final LLM output.
@@ -56,6 +76,7 @@ export class MiraAgent implements Agent {
     const finalMarker = "Final Answer:";
     if (text.includes(finalMarker)) {
       text = text.split(finalMarker)[1].trim();
+      return { insight: text };
     }
     try {
       const parsed = JSON.parse(text);
@@ -84,6 +105,8 @@ export class MiraAgent implements Agent {
       const insightHistory = userContext.insight_history || "";
       const query = userContext.query || "";
 
+      let turns = 0;
+
       // If query is empty, return default response.
       if (!query.trim()) {
         return { result: "No query provided." };
@@ -91,42 +114,49 @@ export class MiraAgent implements Agent {
 
       console.log("Query:", query);
 
-      const llm = LLMProvider.getLLM();
-      const prompt = new PromptTemplate({
-        template: this.agentPrompt,
-        inputVariables: ["transcript_history", "insight_history", "query", "input", "tools", "tool_names", "agent_scratchpad"],
-      });
+      const llm = LLMProvider.getLLM().bindTools(this.agentTools);
+      const toolNames = this.agentTools.map((tool) => tool.name+": "+tool.description || "");
+      
+      // Replace the {tool_names} placeholder with actual tool names and descriptions
+      const systemPrompt = systemPromptBlueprint.replace(
+        "{tool_names}",
+        toolNames.join("\n")
+      );
 
-      // console.log("Prompt:", prompt.template);
+      this.messages.push(new SystemMessage(systemPrompt));
+      this.messages.push(new HumanMessage(query));
 
-      const agent = await createReactAgent({
-        llm,
-        tools: this.agentTools,
-        prompt,
-      });
+      while (turns < 5) {  
+        // Invoke the chain with the query
+        const result: AIMessage = await llm.invoke(this.messages);
+        this.messages.push(result);
 
-      const executor = new AgentExecutor({
-        agent,
-        tools: this.agentTools,
-        maxIterations: 5,
-        verbose: process.env.NODE_ENV === "development",
-      });
+        const output: string = result.content.toString();
+        
+        if (result.tool_calls) {
+          for (const toolCall of result.tool_calls) {
+            const selectedTool = this.agentTools.find(tool => tool.name === toolCall.name);
+            if (selectedTool) {
+              const toolMessage:ToolMessage = await selectedTool.invoke(toolCall);
+              if (toolMessage.content == "" || toolMessage.content == null) {
+                toolMessage.content = "Tool executed successfully but did not return any information.";
+              }
+              console.log("Tool Result:", toolMessage.content);
+              this.messages.push(toolMessage);
+            }
+          }
+        }
+        
+        const finalMarker = "Final Answer:";
+        if (output.includes(finalMarker)) {
+          console.log("Final Answer:", output);
+          const parsedResult = this.parseOutput(output);
+          return parsedResult.insight;
+        }
+        console.log(`Result for turn ${turns}: ${output}`);
 
-      const toolNames = this.agentTools.map((tool) => tool.name || "unknown");
-      const agentScratchpad = "";
-
-      const result = await executor.invoke({
-        // transcript_history: transcriptHistory,
-        // insight_history: insightHistory,
-        query,
-        tools: this.agentTools,
-        tool_names: toolNames,
-        agent_scratchpad: agentScratchpad,
-      });
-
-      console.log("Result:", result.output);
-      const parsedResult = this.parseOutput(result.output);
-      return parsedResult.insight;
+        turns++;
+      }
     } catch (err) {
       console.error("[MiraAgent] Error:", err);
       const errString = String(err);
