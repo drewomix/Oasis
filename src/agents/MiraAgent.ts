@@ -44,6 +44,26 @@ export class MiraAgent implements Agent {
     "Answers user queries from smart glasses using conversation context and history.";
   public agentPrompt = agentPromptBlueprint;
   public agentTools = [new SearchToolForAgents()];
+  private locationContext: {
+    city: string;
+    district: string;
+    country: string;
+  } = {
+    city: 'Unknown',
+    district: 'Unknown',
+    country: 'Unknown'
+  };
+
+  /**
+   * Updates the agent's location context
+   */
+  public updateLocationContext(locationInfo: {
+    city: string;
+    district: string;
+    country: string;
+  }): void {
+    this.locationContext = locationInfo;
+  }
 
   /**
    * Parses the final LLM output.
@@ -90,6 +110,7 @@ export class MiraAgent implements Agent {
       }
 
       console.log("Query:", query);
+      console.log("Location Context:", this.locationContext);
 
       const llm = LLMProvider.getLLM();
       const prompt = new PromptTemplate({
@@ -97,7 +118,10 @@ export class MiraAgent implements Agent {
         inputVariables: ["transcript_history", "insight_history", "query", "input", "tools", "tool_names", "agent_scratchpad"],
       });
 
-      // console.log("Prompt:", prompt.template);
+      // Only add location context if we have a valid city
+      const enhancedQuery = this.locationContext.city !== 'Unknown'
+        ? `For context the User is currently in ${this.locationContext.city}, ${this.locationContext.district}, ${this.locationContext.country}. ${query}`
+        : query;
 
       const agent = await createReactAgent({
         llm,
@@ -116,9 +140,7 @@ export class MiraAgent implements Agent {
       const agentScratchpad = "";
 
       const result = await executor.invoke({
-        // transcript_history: transcriptHistory,
-        // insight_history: insightHistory,
-        query,
+        query: enhancedQuery,
         tools: this.agentTools,
         tool_names: toolNames,
         agent_scratchpad: agentScratchpad,
