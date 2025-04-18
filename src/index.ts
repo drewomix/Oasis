@@ -250,11 +250,10 @@ class MiraServer extends TpaServer {
       transcriptionManager.handleTranscription(transcriptionData);
     });
 
-    /*
-    session.events.onCommandActivate("hey_mira", (data) => {
-      console.log(`[Session ${sessionId}]: Command activated: ${data}`);
+    session.events.onLocation((locationData) => {
+      this.handleLocation(locationData, sessionId);
     });
-*/
+
     // Handle connection events
     session.events.onConnected((settings) => {
       console.log(`\n[User ${userId}] connected to augmentos-cloud\n`);
@@ -264,6 +263,49 @@ class MiraServer extends TpaServer {
     session.events.onError((error) => {
       console.error(`[User ${userId}] Error:`, error);
     });
+  }
+
+  private async handleLocation(locationData: any, sessionId: string): Promise<void> {
+    try {
+      const { latitude, longitude } = locationData;
+      
+      if (!latitude || !longitude) {
+        console.log('Invalid location data received');
+        return;
+      }
+
+      // Use OpenStreetMap Nominatim API for reverse geocoding
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch location data');
+      }
+
+      const data = await response.json();
+      
+      // Extract relevant location information
+      const address = data.address;
+      const locationInfo = {
+        city: address.city || address.town || address.village || 'Unknown city',
+        district: address.suburb || address.neighbourhood || 'Unknown district',
+        country: address.country || 'Unknown country'
+      };
+
+      // Update the MiraAgent with location context
+      this.agentPerSession.get(sessionId)?.updateLocationContext(locationInfo);
+      
+      console.log(`User location: ${locationInfo.city}, ${locationInfo.district}, ${locationInfo.country}`);
+    } catch (error) {
+      console.error('Error processing location:', error);
+      // Update MiraAgent with fallback location context
+      this.agentPerSession.get(sessionId)?.updateLocationContext({
+        city: 'Unknown',
+        district: 'Unknown',
+        country: 'Unknown'
+      });
+    }
   }
 
   // Handle session disconnection

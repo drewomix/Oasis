@@ -4,7 +4,7 @@
     "": {
       "name": "@augmentos/mira",
       "dependencies": {
-        "@augmentos/sdk": "^1.1.1",
+        "@augmentos/sdk": "^1.1.2",
         "@langchain/anthropic": "^0.3.16",
         "@langchain/community": "^0.3.39",
         "@langchain/core": "^0.3.43",
@@ -26,7 +26,7 @@
   "packages": {
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.37.0", "", { "dependencies": { "@types/node": "^18.11.18", "@types/node-fetch": "^2.6.4", "abort-controller": "^3.0.0", "agentkeepalive": "^4.2.1", "form-data-encoder": "1.7.2", "formdata-node": "^4.3.2", "node-fetch": "^2.6.7" } }, "sha512-tHjX2YbkUBwEgg0JZU3EFSSAQPoK4qQR/NFYa8Vtzd5UAyXzZksCw2In69Rml4R/TyHPBfRYaLK35XiOe33pjw=="],
 
-    "@augmentos/sdk": ["@augmentos/sdk@1.1.1", "", { "dependencies": { "axios": "^1.8.1", "express": "^4.18.2", "jsonwebtoken": "^8.5.1" } }, "sha512-1C4NlF0yhw96/NuvqDlvtA4/3sE9p+BCqszk8SroUKAuSF1hkuLKj5O12Bg0Q1zGuaIS+Cdp0oEYk0UFEDAs2g=="],
+    "@augmentos/sdk": ["@augmentos/sdk@1.1.2", "", { "dependencies": { "axios": "^1.8.1", "express": "^4.18.2", "jsonwebtoken": "^8.5.1" } }, "sha512-fjoHbJlRdR19/1ij8Oiwp/8IdPfAqufiE+vb1jgdTR7vHNrsxMkliXYvAF3nS6eVJ20lVQGdlJUDvS8jj6t34Q=="],
 
     "@browserbasehq/sdk": ["@browserbasehq/sdk@2.5.0", "", { "dependencies": { "@types/node": "^18.11.18", "@types/node-fetch": "^2.6.4", "abort-controller": "^3.0.0", "agentkeepalive": "^4.2.1", "form-data-encoder": "1.7.2", "formdata-node": "^4.3.2", "node-fetch": "^2.6.7" } }, "sha512-bcnbYZvm5Ht1nrHUfWDK4crspiTy1ESJYMApsMiOTUnlKOan0ocRD6m7hZH34iSC2c2XWsoryR80cwsYgCBWzQ=="],
 

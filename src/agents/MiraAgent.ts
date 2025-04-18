@@ -25,6 +25,7 @@ Utilize available tools when necessary and adhere to the following guidelines:
    "Final Answer: <concise answer>"
 6. If the query is empty, nonsensical, or useless, return Final Answer: "No query provided."
 7. For context, today's date is ${new Date().toUTCString().split(' ').slice(0,4).join(' ')}.
+{location_context}
 
 Tools:
 {tool_names}
@@ -44,6 +45,7 @@ Utilize available tools when necessary and adhere to the following guidelines:
 5. If the query is empty, return Final Answer: {{"insight": "No query provided."}}
 6. Do not output any other text.
 7. For context, today's date is ${new Date().toUTCString().split(' ').slice(0,4).join(' ')}.
+{location_context}
 
 User Query:
 {query}
@@ -64,6 +66,27 @@ export class MiraAgent implements Agent {
   public agentTools:Tool[] = [new SearchToolForAgents()];
 
   public messages: BaseMessage[] = [];
+
+  private locationContext: {
+    city: string;
+    district: string;
+    country: string;
+  } = {
+    city: 'Unknown',
+    district: 'Unknown',
+    country: 'Unknown'
+  };
+
+  /**
+   * Updates the agent's location context
+   */
+  public updateLocationContext(locationInfo: {
+    city: string;
+    district: string;
+    country: string;
+  }): void {
+    this.locationContext = locationInfo;
+  }
 
   /**
    * Parses the final LLM output.
@@ -113,6 +136,11 @@ export class MiraAgent implements Agent {
       }
 
       console.log("Query:", query);
+      console.log("Location Context:", this.locationContext);
+      // Only add location context if we have a valid city
+      const locationInfo = this.locationContext.city !== 'Unknown'
+      ? `For context the User is currently in ${this.locationContext.city}, ${this.locationContext.district}, ${this.locationContext.country}.`
+      : '';
 
       const llm = LLMProvider.getLLM().bindTools(this.agentTools);
       const toolNames = this.agentTools.map((tool) => tool.name+": "+tool.description || "");
@@ -121,7 +149,7 @@ export class MiraAgent implements Agent {
       const systemPrompt = systemPromptBlueprint.replace(
         "{tool_names}",
         toolNames.join("\n")
-      );
+      ).replace("{location_context}", locationInfo);
 
       this.messages.push(new SystemMessage(systemPrompt));
       this.messages.push(new HumanMessage(query));
