@@ -224,13 +224,6 @@ class MiraServer extends TpaServer {
     );
     this.transcriptionManagers.set(sessionId, transcriptionManager);
 
-    // Welcome message
-    session.layouts.showReferenceCard(
-      "Mira AI", 
-      "Virtual assistant connected", 
-      { durationMs: 3000 }
-    );
-
     // Handle transcription data
     session.events.onTranscription((transcriptionData) => {
       transcriptionManager.handleTranscription(transcriptionData);
