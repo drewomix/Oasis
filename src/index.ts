@@ -1,10 +1,7 @@
 import path from 'path';
 import {
   TpaSession,
-  TpaServer,
-  StreamType,
-  LayoutType,
-  ToolCall,
+  TpaServer
 } from '@augmentos/sdk';
 import { MiraAgent } from './agents';
 import { wrapText } from './utils';
