@@ -4,9 +4,11 @@ import {
   TpaServer,
   StreamType,
   LayoutType,
+  ToolCall,
 } from '@augmentos/sdk';
 import { MiraAgent } from './agents';
 import { wrapText } from './utils';
+import { getAllToolsForUser } from './agents/tools/TpaTool';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
 const PACKAGE_NAME = process.env.PACKAGE_NAME || "com.augmentos.miraai";
@@ -57,7 +59,7 @@ class TranscriptionManager {
     // Clean the text: lowercase and remove punctuation for easier matching
     const cleanedText = text.toLowerCase().replace(/[^\w\s]/g, '').trim();
     const hasWakeWord = explicitWakeWords.some(word => cleanedText.includes(word));
-    
+
     if (!hasWakeWord) {
       console.log('No wake word detected');
       return;
@@ -113,7 +115,7 @@ class TranscriptionManager {
     }
 
     this.isProcessingQuery = true;
-    
+
     try {
       // Remove wake word from query
       const query = this.removeWakeWord(rawText);
@@ -136,7 +138,7 @@ class TranscriptionManager {
       // Process the query with the Mira agent
       const inputData = { query };
       const agentResponse = await this.miraAgent.handleContext(inputData);
-      
+
       if (!agentResponse) {
         console.log("No insight found");
         this.session.layouts.showTextWall(
@@ -163,7 +165,7 @@ class TranscriptionManager {
         clearTimeout(this.timeoutId);
         this.timeoutId = undefined;
       }
-      
+
       // Reset processing state after a delay
       setTimeout(() => {
         this.isProcessingQuery = false;
@@ -210,23 +212,46 @@ class TranscriptionManager {
  */
 class MiraServer extends TpaServer {
   private transcriptionManagers = new Map<string, TranscriptionManager>();
-  private miraAgent = new MiraAgent();
+  private agentPerSession = new Map<string, MiraAgent>();
 
   /**
    * Handle new session connections
    */
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`Setting up Mira service for session ${sessionId}, user ${userId}`);
+    const agent = new MiraAgent();
+    // Start fetching tools asynchronously without blocking
+    getAllToolsForUser(userId).then(tools => {
+      // Append tools to agent when they're available
+      if (tools.length > 0) {
+        agent.agentTools.push(...tools);
+        console.log(`Added ${tools.length} user tools to agent for user ${userId}`);
+      }
+    }).catch(error => {
+      console.error(`Failed to load tools for user ${userId}:`, error);
+    });
+    this.agentPerSession.set(sessionId, agent);
 
     // Create transcription manager for this session
     const transcriptionManager = new TranscriptionManager(
-      session, sessionId, userId, this.miraAgent
+      session, sessionId, userId, agent
     );
     this.transcriptionManagers.set(sessionId, transcriptionManager);
+
+    // Welcome message
+    session.layouts.showReferenceCard(
+      "Mira AI", 
+      "Virtual assistant connected", 
+      { durationMs: 3000 }
+    );
 
     // Handle transcription data
     session.events.onTranscription((transcriptionData) => {
       transcriptionManager.handleTranscription(transcriptionData);
+    });
+
+    session.events.onLocation((locationData) => {
+      this.handleLocation(locationData, sessionId);
     });
 
     // Handle connection events
@@ -240,6 +265,49 @@ class MiraServer extends TpaServer {
     });
   }
 
+  private async handleLocation(locationData: any, sessionId: string): Promise<void> {
+    try {
+      const { latitude, longitude } = locationData;
+      
+      if (!latitude || !longitude) {
+        console.log('Invalid location data received');
+        return;
+      }
+
+      // Use OpenStreetMap Nominatim API for reverse geocoding
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch location data');
+      }
+
+      const data = await response.json();
+      
+      // Extract relevant location information
+      const address = data.address;
+      const locationInfo = {
+        city: address.city || address.town || address.village || 'Unknown city',
+        district: address.suburb || address.neighbourhood || 'Unknown district',
+        country: address.country || 'Unknown country'
+      };
+
+      // Update the MiraAgent with location context
+      this.agentPerSession.get(sessionId)?.updateLocationContext(locationInfo);
+      
+      console.log(`User location: ${locationInfo.city}, ${locationInfo.district}, ${locationInfo.country}`);
+    } catch (error) {
+      console.error('Error processing location:', error);
+      // Update MiraAgent with fallback location context
+      this.agentPerSession.get(sessionId)?.updateLocationContext({
+        city: 'Unknown',
+        district: 'Unknown',
+        country: 'Unknown'
+      });
+    }
+  }
+
   // Handle session disconnection
   protected onStop(sessionId: string, userId: string, reason: string): Promise<void> {
     console.log(`Stopping Mira service for session ${sessionId}, user ${userId}`);
@@ -248,6 +316,7 @@ class MiraServer extends TpaServer {
       manager.cleanup();
       this.transcriptionManagers.delete(sessionId);
     }
+    this.agentPerSession.delete(sessionId);
     return Promise.resolve();
   }
 }
