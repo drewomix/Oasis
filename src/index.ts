@@ -20,7 +20,18 @@ const explicitWakeWords = [
   "hey miara", "he miara", "hey mia", "he mia", "hey mural", "he mural",
   "hey amira", "hey myra", "he myra", "hay mira", "hai mira", "hey-mira",
   "he-mira", "heymira", "heymara", "hey mirah", "he mirah", "hey meera", "he meera",
-  "Amira", "amira", "a mira", "a mirror"
+  "Amira", "amira", "a mira", "a mirror", "hey miller", "he miller", "hey milla", "he milla", "hey mila", "he mila", 
+  "hey miwa", "he miwa", "hey mora", "he mora", "hey moira", "he moira",
+  "hey miera", "he miera", "hey mura", "he mura", "hey maira", "he maira",
+  "hey meara", "he meara", "hey mara", "he mara", "hey mina", "he mina",
+  "hey mirra", "he mirra", "hey mir", "he mir", "hey miro", "he miro",
+  "hey miruh", "he miruh", "hey meerah", "he meerah", "hey meira", "he meira",
+  "hei mira", "hi mira", "hey mere", "he mere", "hey murra", "he murra",
+  "hey mera", "he mera", "hey neera", "he neera", "hey murah", "he murah",
+  "hey mear", "he mear", "hey miras", "he miras", "hey miora", "he miora", "hey miri", "he miri",
+  "hey maura", "he maura", "hey maya", "he maya", "hey moora", "he moora",
+  "hey mihrah", "he mihrah", "ay mira", "ey mira", "yay mira", "hey mihra",
+  "hey mera", "hey mira", "hey mila", "hey mirra"
 ];
 
 /**
