@@ -275,16 +275,18 @@ class MiraServer extends TpaServer {
 
   private async handleLocation(locationData: any, sessionId: string): Promise<void> {
     try {
-      const { latitude, longitude } = locationData;
+      const { lat, lng} = locationData;
+
+      console.log(`Location data: ${JSON.stringify(locationData)}`);
       
-      if (!latitude || !longitude) {
+      if (!lat || !lng) {
         console.log('Invalid location data received');
         return;
       }
 
       // Use OpenStreetMap Nominatim API for reverse geocoding
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`
       );
       
       if (!response.ok) {
