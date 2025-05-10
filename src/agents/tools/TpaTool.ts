@@ -2,7 +2,9 @@ import { DynamicStructuredTool, DynamicTool, StructuredTool, tool, Tool } from '
 import { z } from "zod";
 import { AppI, ToolSchema, ToolCall } from '@augmentos/sdk';
 import axios, { AxiosError } from 'axios';
-const CLOUD_URL = process.env.CLOUD_URL || "https://"+process.env.CLOUD_HOST_NAME;
+
+
+const CLOUD_URL = "https://"+process.env.CLOUD_HOST_NAME;
 
 /**
  * Fetches all available tools for a specified package from the cloud service.
@@ -65,6 +67,7 @@ export function compileTool(tpaPackageName: string, tpaTool: ToolSchema, actingU
   if (tpaTool.activationPhrases && tpaTool.activationPhrases.length > 0) {
     description += "\nPossibly activated by phrases like: " + tpaTool.activationPhrases?.join(', ')
   }
+
   return tool(
     async (input): Promise<string> => {
       // Construct the webhook URL for the TPA tool
@@ -86,7 +89,7 @@ export function compileTool(tpaPackageName: string, tpaTool: ToolSchema, actingU
           headers: {
             'Content-Type': 'application/json',
           },
-          timeout: 10000 // 10 second timeout for the request
+          timeout: 40000 // 10 second timeout for the request
         });
 
         // Return the successful response data
