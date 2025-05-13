@@ -3,8 +3,12 @@ import axios from 'axios';
 import { z } from 'zod';
 
 const CLOUD_URL = "https://"+process.env.CLOUD_HOST_NAME;
-const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || 'test_key';
-const PACKAGE_NAME = process.env.PACKAGE_NAME || "com.augmentos.miraai";
+const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
+const PACKAGE_NAME = process.env.PACKAGE_NAME;
+
+console.log("$$$$$ CLOUD_URL:", CLOUD_URL);
+console.log("$$$$$ AUGMENTOS_API_KEY:", AUGMENTOS_API_KEY);
+console.log("$$$$$ PACKAGE_NAME:", PACKAGE_NAME);
 
 const ACTIONS = ['start', 'stop'] as const;
 

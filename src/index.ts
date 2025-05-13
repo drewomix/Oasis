@@ -10,7 +10,6 @@ import { getAllToolsForUser } from './agents/tools/TpaTool';
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
-const CLOUD_HOST_NAME = process.env.CLOUD_HOST_NAME;
 
 console.log(`Starting ${PACKAGE_NAME} server on port ${PORT}...`);
 console.log(`Using API key: ${AUGMENTOS_API_KEY}`);
