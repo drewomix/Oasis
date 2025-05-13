@@ -8,8 +8,9 @@ import { wrapText } from './utils';
 import { getAllToolsForUser } from './agents/tools/TpaTool';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
-const PACKAGE_NAME = process.env.PACKAGE_NAME || "com.augmentos.miraai";
-const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY || 'test_key'; // In production, this would be securely stored
+const PACKAGE_NAME = process.env.PACKAGE_NAME;
+const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
+const CLOUD_HOST_NAME = process.env.CLOUD_HOST_NAME;
 
 console.log(`Starting ${PACKAGE_NAME} server on port ${PORT}...`);
 console.log(`Using API key: ${AUGMENTOS_API_KEY}`);
@@ -89,15 +90,19 @@ class TranscriptionManager {
     let timerDuration: number;
 
     if (transcriptionData.isFinal) {
+      console.log("$$$$$ transcriptionData.isFinal:", transcriptionData.isFinal);
       // Check if the final transcript ends with a wake word
       if (this.endsWithWakeWord(cleanedText)) {
         // If it ends with just a wake word, wait longer for additional query text
-        timerDuration = 3000;
+        console.log("$$$$$ transcriptionData.isFinal: ends with wake word");
+        timerDuration = 6000;
       } else {
+        console.log("$$$$$ transcriptionData.isFinal: does not end with wake word");
         // Final transcript with additional content should be processed soon
         timerDuration = 1500;
       }
     } else {
+      console.log("$$$$$ transcriptionData.isFinal: not final");
       // For non-final transcripts
       timerDuration = this.transcriptionStartTime === 0 ? 3000 : 1500;
     }
@@ -107,8 +112,8 @@ class TranscriptionManager {
       clearTimeout(this.timeoutId);
     }
 
-    // Set a new timeout to process the query
-    this.timeoutId = setTimeout(() => {
+    // Set a new timeout to process the query\
+    setTimeout(() => {
       this.processQuery(text);
     }, timerDuration);
   }
@@ -126,6 +131,11 @@ class TranscriptionManager {
 
     try {
       // Remove wake word from query
+      const backendUrl = `http://${CLOUD_HOST_NAME}/api/transcripts/${this.sessionId}?duration=10`;
+      const transcriptResponse = await fetch(backendUrl);
+      const transcriptionResponse = await transcriptResponse.json();
+    
+      const rawText = transcriptionResponse.segments.map((segment: any) => segment.text).join(' ');
       const query = this.removeWakeWord(rawText);
       console.log(`[Session ${this.sessionId}]: Processing query: "${query}"`);
 
@@ -227,7 +237,7 @@ class MiraServer extends TpaServer {
    */
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`Setting up Mira service for session ${sessionId}, user ${userId}`);
-    const agent = new MiraAgent();
+    const agent = new MiraAgent(userId);
     // Start fetching tools asynchronously without blocking
     getAllToolsForUser(userId).then(tools => {
       // Append tools to agent when they're available
@@ -239,6 +249,8 @@ class MiraServer extends TpaServer {
       console.error(`Failed to load tools for user ${userId}:`, error);
     });
     this.agentPerSession.set(sessionId, agent);
+
+    // console.log("$$$$$ Agent:", agent.agentTools);
 
     // Create transcription manager for this session
     const transcriptionManager = new TranscriptionManager(
@@ -294,6 +306,7 @@ class MiraServer extends TpaServer {
       }
 
       const data = await response.json();
+      console.log("$$$$$ Location data:", JSON.stringify(data));
       
       // Extract relevant location information
       const address = data.address;
@@ -333,8 +346,8 @@ class MiraServer extends TpaServer {
 
 // Create and start the server
 const server = new MiraServer({
-  packageName: PACKAGE_NAME,
-  apiKey: AUGMENTOS_API_KEY,
+  packageName: PACKAGE_NAME!,
+  apiKey: AUGMENTOS_API_KEY!,
   port: PORT,
   webhookPath: '/webhook',
   publicDir: path.join(__dirname, './public')

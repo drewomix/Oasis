@@ -29,7 +29,7 @@ export class SearchToolForAgents extends Tool {
 
   constructor() {
     super();
-    this.serpApi = new SerpAPI(SERPAPI_API_KEY || '');
+    this.serpApi = new SerpAPI(SERPAPI_API_KEY!);
   }
 
   /**

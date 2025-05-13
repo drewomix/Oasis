@@ -9,6 +9,7 @@ import { wrapText } from "../utils";
 import { AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { Tool } from "langchain/tools";
+import { TpaCommandsTool } from "./tools/TpaCommandsTool";
 
 interface QuestionAnswer {
     insight: string;
@@ -38,7 +39,7 @@ export class MiraAgent implements Agent {
   public agentDescription =
     "Answers user queries from smart glasses using conversation context and history.";
   public agentPrompt = systemPromptBlueprint;
-  public agentTools:Tool[] = [new SearchToolForAgents()];
+  public agentTools:Tool[];
 
   public messages: BaseMessage[] = [];
 
@@ -51,6 +52,10 @@ export class MiraAgent implements Agent {
     district: 'Unknown',
     country: 'Unknown'
   };
+
+  constructor(userId: string) {
+    this.agentTools = [new SearchToolForAgents(), new TpaCommandsTool(userId)];
+  }
 
   /**
    * Updates the agent's location context
