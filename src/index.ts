@@ -74,7 +74,7 @@ class TranscriptionManager {
       return;
     }
 
-    console.log(`[Session ${this.sessionId}]: Wake word detected in text "${text}"`);
+    // console.log(`[Session ${this.sessionId}]: Wake word detected in text "${text}"`);
 
     // If this is our first detection, start the transcription timer
     if (this.transcriptionStartTime === 0) {
@@ -90,7 +90,7 @@ class TranscriptionManager {
     let timerDuration: number;
 
     if (transcriptionData.isFinal) {
-      console.log("$$$$$ transcriptionData.isFinal:", transcriptionData.isFinal);
+      // console.log("$$$$$ transcriptionData.isFinal:", transcriptionData.isFinal);
       // Check if the final transcript ends with a wake word
       if (this.endsWithWakeWord(cleanedText)) {
         // If it ends with just a wake word, wait longer for additional query text
@@ -113,7 +113,7 @@ class TranscriptionManager {
     }
 
     // Set a new timeout to process the query\
-    setTimeout(() => {
+    this.timeoutId = setTimeout(() => {
       this.processQuery(text);
     }, timerDuration);
   }
@@ -131,12 +131,9 @@ class TranscriptionManager {
 
     try {
       // Remove wake word from query
-      const backendUrl = `http://${CLOUD_HOST_NAME}/api/transcripts/${this.sessionId}?duration=10`;
-      const transcriptResponse = await fetch(backendUrl);
-      const transcriptionResponse = await transcriptResponse.json();
-    
-      const rawText = transcriptionResponse.segments.map((segment: any) => segment.text).join(' ');
       const query = this.removeWakeWord(rawText);
+      console.log(`[Session ${this.sessionId}]: Processing query: "${query}"`);
+
       console.log(`[Session ${this.sessionId}]: Processing query: "${query}"`);
 
       if (query.trim().length === 0) {
@@ -289,7 +286,7 @@ class MiraServer extends TpaServer {
     try {
       const { lat, lng} = locationData;
 
-      console.log(`Location data: ${JSON.stringify(locationData)}`);
+      // console.log(`Location data: ${JSON.stringify(locationData)}`);
       
       if (!lat || !lng) {
         console.log('Invalid location data received');
@@ -306,7 +303,7 @@ class MiraServer extends TpaServer {
       }
 
       const data = await response.json();
-      console.log("$$$$$ Location data:", JSON.stringify(data));
+      // console.log("$$$$$ Location data:", JSON.stringify(data));
       
       // Extract relevant location information
       const address = data.address;
@@ -319,7 +316,7 @@ class MiraServer extends TpaServer {
       // Update the MiraAgent with location context
       this.agentPerSession.get(sessionId)?.updateLocationContext(locationInfo);
       
-      console.log(`User location: ${locationInfo.city}, ${locationInfo.district}, ${locationInfo.country}`);
+      // console.log(`User location: ${locationInfo.city}, ${locationInfo.district}, ${locationInfo.country}`);
     } catch (error) {
       console.error('Error processing location:', error);
       // Update MiraAgent with fallback location context
