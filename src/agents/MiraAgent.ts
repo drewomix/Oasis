@@ -29,7 +29,13 @@ Utilize available tools when necessary and adhere to the following guidelines:
    "Final Answer: <concise answer>"
 6. If the query is empty, nonsensical, or useless, return Final Answer: "No query provided."
 7. For context, today's date is ${new Date().toUTCString().split(' ').slice(0,4).join(' ')}.
+8. If the user's query is location-specific (e.g., weather, news, events, or anything that depends on place), always use the user's current location context to provide the most relevant answer.
+
+The user is currently in:
 {location_context}
+
+The user's most recent notifications are:
+{notifications_context}
 
 Tools:
 {tool_names}
@@ -55,8 +61,6 @@ export class MiraAgent implements Agent {
     state: 'Unknown',
     country: 'Unknown'
   };
-
-  private session: any;
 
   constructor(userId: string) {
     this.agentTools = [
@@ -131,14 +135,28 @@ export class MiraAgent implements Agent {
       ? `For context the User is currently in ${this.locationContext.city}, ${this.locationContext.state}, ${this.locationContext.country}.`
       : '';
 
+      // Add notifications context if present
+      let notificationsContext = '';
+      if (userContext.notifications && Array.isArray(userContext.notifications) && userContext.notifications.length > 0) {
+        // Format as a bullet list of summaries, or fallback to title/text
+        const notifs = userContext.notifications.map((n: any, idx: number) => {
+          if (n.summary) return `- ${n.summary}`;
+          if (n.title && n.text) return `- ${n.title}: ${n.text}`;
+          if (n.title) return `- ${n.title}`;
+          if (n.text) return `- ${n.text}`;
+          return `- Notification ${idx+1}`;
+        }).join('\n');
+        notificationsContext = `Recent notifications:\n${notifs}`;
+      }
+
       const llm = LLMProvider.getLLM().bindTools(this.agentTools);
       const toolNames = this.agentTools.map((tool) => tool.name+": "+tool.description || "");
 
       // Replace the {tool_names} placeholder with actual tool names and descriptions
-      const systemPrompt = systemPromptBlueprint.replace(
-        "{tool_names}",
-        toolNames.join("\n")
-      ).replace("{location_context}", locationInfo);
+      const systemPrompt = systemPromptBlueprint
+        .replace("{tool_names}", toolNames.join("\n"))
+        .replace("{location_context}", locationInfo)
+        .replace("{notifications_context}", notificationsContext);
 
       this.messages.push(new SystemMessage(systemPrompt));
       this.messages.push(new HumanMessage(query));

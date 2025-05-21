@@ -35,6 +35,33 @@ const explicitWakeWords = [
 ];
 
 /**
+ * Manages notifications for users
+ */
+class NotificationsManager {
+  private notificationsPerUser = new Map<string, any[]>();
+
+  addNotifications(userId: string, notifications: any[]): void {
+    if (!this.notificationsPerUser.has(userId)) {
+      this.notificationsPerUser.set(userId, []);
+    }
+    // Append new notifications
+    const existing = this.notificationsPerUser.get(userId)!;
+    this.notificationsPerUser.set(userId, existing.concat(notifications));
+  }
+
+  getLatestNotifications(userId: string, count: number = 5): any[] {
+    const all = this.notificationsPerUser.get(userId) || [];
+    return all.slice(-count);
+  }
+
+  clearNotifications(userId: string): void {
+    this.notificationsPerUser.delete(userId);
+  }
+}
+
+const notificationsManager = new NotificationsManager();
+
+/**
  * Manages the transcription state for active sessions
  */
 class TranscriptionManager {
@@ -309,11 +336,23 @@ class MiraServer extends TpaServer {
 
     // Handle transcription data
     session.events.onTranscription((transcriptionData) => {
-      transcriptionManager.handleTranscription(transcriptionData);
+      const transcriptionManager = this.transcriptionManagers.get(sessionId);
+      if (transcriptionManager) {
+        // Attach notifications to MiraAgent for context by passing them in userContext
+        transcriptionManager.handleTranscription({
+          ...transcriptionData,
+          notifications: notificationsManager.getLatestNotifications(userId, 5)
+        });
+      }
     });
 
     session.events.onLocation((locationData) => {
       this.handleLocation(locationData, sessionId);
+    });
+
+    session.events.onPhoneNotifications((phoneNotifications) => {
+      console.log("$$$$$ Phone notifications:", phoneNotifications);
+      this.handlePhoneNotifications(phoneNotifications, sessionId, userId);
     });
 
     // Handle connection events
@@ -372,6 +411,16 @@ class MiraServer extends TpaServer {
         country: 'Unknown'
       });
     }
+  }
+
+  private handlePhoneNotifications(phoneNotifications: any, sessionId: string, userId: string): void {
+    // Save notifications for the user
+    if (Array.isArray(phoneNotifications)) {
+      notificationsManager.addNotifications(userId, phoneNotifications);
+    } else if (phoneNotifications) {
+      notificationsManager.addNotifications(userId, [phoneNotifications]);
+    }
+    // No need to update agent context here; notifications will be passed in userContext when needed
   }
 
   // Handle session disconnection
