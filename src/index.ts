@@ -10,6 +10,19 @@ import { getAllToolsForUser } from './agents/tools/TpaTool';
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
+const CLOUD_HOST_NAME = process.env.CLOUD_HOST_NAME;
+
+if (!AUGMENTOS_API_KEY) {
+  throw new Error('AUGMENTOS_API_KEY is not set');
+}
+
+if (!PACKAGE_NAME) {
+  throw new Error('PACKAGE_NAME is not set');
+}
+
+if (!CLOUD_HOST_NAME) {
+  throw new Error('CLOUD_HOST_NAME is not set');
+}
 
 console.log(`Starting ${PACKAGE_NAME} server on port ${PORT}...`);
 console.log(`Using API key: ${AUGMENTOS_API_KEY}`);
@@ -96,6 +109,10 @@ class TranscriptionManager {
     const cleanedText = text.toLowerCase().replace(/[^\w\s]/g, '').trim();
     const hasWakeWord = explicitWakeWords.some(word => cleanedText.includes(word));
 
+
+    // console.log(`[Session ${this.sessionId}]: Transcription data: ${cleanedText}`);
+    // console.log(`[Session ${this.sessionId}]: Has wake word: ${hasWakeWord}`);
+
     if (!hasWakeWord) {
       console.log('No wake word detected');
       return;
@@ -122,7 +139,7 @@ class TranscriptionManager {
       if (this.endsWithWakeWord(cleanedText)) {
         // If it ends with just a wake word, wait longer for additional query text
         console.log("$$$$$ transcriptionData.isFinal: ends with wake word");
-        timerDuration = 6000;
+        timerDuration = 8000;
       } else {
         console.log("$$$$$ transcriptionData.isFinal: does not end with wake word");
         // Final transcript with additional content should be processed soon
@@ -131,7 +148,7 @@ class TranscriptionManager {
     } else {
       console.log("$$$$$ transcriptionData.isFinal: not final");
       // For non-final transcripts
-      timerDuration = this.transcriptionStartTime === 0 ? 3000 : 1500;
+      timerDuration = 3000;
     }
 
     // Clear any existing timeout
@@ -139,16 +156,35 @@ class TranscriptionManager {
       clearTimeout(this.timeoutId);
     }
 
-    // Set a new timeout to process the query\
+    // Set a new timeout to process the query
     this.timeoutId = setTimeout(() => {
-      this.processQuery(text);
+      // Pass the timerDuration for fallback, but processQuery will calculate the real duration
+      this.processQuery(text, timerDuration);
     }, timerDuration);
   }
 
   /**
    * Process and respond to the user's query
    */
-  private async processQuery(rawText: string): Promise<void> {
+  private async processQuery(rawText: string, timerDuration: number): Promise<void> {
+    // Calculate the actual duration from transcriptionStartTime to now
+    const endTime = Date.now();
+    let durationSeconds = 3; // fallback default
+    if (this.transcriptionStartTime > 0) {
+      durationSeconds = Math.max(1, Math.ceil((endTime - this.transcriptionStartTime) / 1000));
+    } else if (timerDuration) {
+      durationSeconds = Math.max(1, Math.ceil(timerDuration / 1000));
+    }
+
+    // Use the calculated duration in the backend URL
+    const backendUrl = `http://${CLOUD_HOST_NAME}/api/transcripts/${this.sessionId}?duration=${durationSeconds}`;
+    const transcriptResponse = await fetch(backendUrl);
+    const transcriptionResponse = await transcriptResponse.json();
+
+    const rawCombinedText = transcriptionResponse.segments.map((segment: any) => segment.text).join(' ');
+    // console.log(`Raw combined text: ${rawCombinedText}`);
+    // console.log(`Transcription data: ${rawText}`);
+
     // Prevent multiple queries from processing simultaneously
     if (this.isProcessingQuery) {
       return;
@@ -158,7 +194,7 @@ class TranscriptionManager {
 
     try {
       // Remove wake word from query
-      const query = this.removeWakeWord(rawText);
+      const query = this.removeWakeWord(rawCombinedText);
       console.log(`[Session ${this.sessionId}]: Processing query: "${query}"`);
 
       console.log(`[Session ${this.sessionId}]: Processing query: "${query}"`);
@@ -276,7 +312,13 @@ class TranscriptionManager {
    * Check if text ends with a wake word
    */
   private endsWithWakeWord(text: string): boolean {
-    return explicitWakeWords.some(word => text.trim().endsWith(word));
+    // Remove trailing punctuation and whitespace, lowercase
+    const cleanedText = text.trim().replace(/[\s.,!?;:]+$/, '').toLowerCase();
+    return explicitWakeWords.some(word => {
+      // Build a regex to match the wake word at the end, allowing for punctuation/whitespace
+      const pattern = new RegExp(`${word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i');
+      return pattern.test(cleanedText);
+    });
   }
 
   /**
@@ -351,7 +393,7 @@ class MiraServer extends TpaServer {
     });
 
     session.events.onPhoneNotifications((phoneNotifications) => {
-      console.log("$$$$$ Phone notifications:", phoneNotifications);
+      // console.log("$$$$$ Phone notifications:", phoneNotifications);
       this.handlePhoneNotifications(phoneNotifications, sessionId, userId);
     });
 
@@ -368,7 +410,7 @@ class MiraServer extends TpaServer {
 
   private async handleLocation(locationData: any, sessionId: string): Promise<void> {
     try {
-      console.log("$$$$$ Location data:", JSON.stringify(locationData));
+      // console.log("$$$$$ Location data:", JSON.stringify(locationData));
       const { lat, lng } = locationData;
 
       // console.log(`Location data: ${JSON.stringify(locationData)}`);
@@ -382,13 +424,13 @@ class MiraServer extends TpaServer {
       const response = await fetch(
         `https://us1.locationiq.com/v1/reverse.php?key=${process.env.LOCATIONIQ_TOKEN}&lat=${lat}&lon=${lng}&format=json`
       );
-      console.log("$$$$$ Response:", response);
+      // console.log("$$$$$ Response:", response);
       if (!response.ok) {
         throw new Error('Failed to fetch location data');
       }
 
       const data = await response.json();
-      console.log("$$$$$ Location data:", JSON.stringify(data));
+      // console.log("$$$$$ Location data:", JSON.stringify(data));
       
       // Extract relevant location information
       const address = data.address;
