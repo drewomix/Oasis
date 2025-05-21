@@ -45,6 +45,7 @@ class TranscriptionManager {
   private userId: string;
   private miraAgent: MiraAgent;
   private transcriptionStartTime: number = 0;
+  private activeTimers: Map<string, NodeJS.Timeout> = new Map(); // timerId -> timeoutId
 
   constructor(session: TpaSession, sessionId: string, userId: string, miraAgent: MiraAgent) {
     this.session = session;
@@ -160,11 +161,51 @@ class TranscriptionManager {
           { durationMs: 5000 }
         );
       } else {
-        console.log("Insight found:", agentResponse);
-        this.session.layouts.showTextWall(
-          wrapText(agentResponse, 30),
-          { durationMs: 8000 }
-        );
+        let handled = false;
+        if (typeof agentResponse === 'string') {
+          try {
+            const parsed = JSON.parse(agentResponse);
+
+            // Generic event handler for tool outputs
+            if (parsed && parsed.event) {
+              switch (parsed.event) {
+                case 'timer_set':
+                  if (parsed.duration) {
+                    const labelText = parsed.label ? ` for "${parsed.label}"` : '';
+                    this.session.layouts.showTextWall(
+                      wrapText(`Timer set${labelText} for ${parsed.duration} seconds.`, 30),
+                      { durationMs: 5000 }
+                    );
+                    const timeout = setTimeout(() => {
+                      this.session.layouts.showTextWall(
+                        wrapText(`Timer${labelText} is up!`, 30),
+                        { durationMs: 8000 }
+                      );
+                      this.activeTimers.delete(parsed.timerId);
+                    }, parsed.duration * 1000);
+                    this.activeTimers.set(parsed.timerId, timeout);
+                    handled = true;
+                  }
+                  break;
+                // Add more cases here for future tool events
+                // case 'notification':
+                //   // handle notification event
+                //   handled = true;
+                //   break;
+                default:
+                  // Unknown event, fall through to default display
+                  break;
+              }
+            }
+          } catch (e) { /* not JSON, ignore */ }
+        }
+
+        if (!handled) {
+          this.session.layouts.showTextWall(
+            wrapText(agentResponse, 30),
+            { durationMs: 8000 }
+          );
+        }
       }
     } catch (error) {
       console.error(`[Session ${this.sessionId}]: Error processing query:`, error);
@@ -218,6 +259,11 @@ class TranscriptionManager {
     if (this.timeoutId) {
       clearTimeout(this.timeoutId);
     }
+    // Clear all active timers
+    for (const timeout of this.activeTimers.values()) {
+      clearTimeout(timeout);
+    }
+    this.activeTimers.clear();
   }
 }
 
@@ -283,7 +329,8 @@ class MiraServer extends TpaServer {
 
   private async handleLocation(locationData: any, sessionId: string): Promise<void> {
     try {
-      const { lat, lng} = locationData;
+      console.log("$$$$$ Location data:", JSON.stringify(locationData));
+      const { lat, lng } = locationData;
 
       // console.log(`Location data: ${JSON.stringify(locationData)}`);
       
@@ -292,36 +339,36 @@ class MiraServer extends TpaServer {
         return;
       }
 
-      // Use OpenStreetMap Nominatim API for reverse geocoding
+      // Use LocationIQ for reverse geocoding
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`
+        `https://us1.locationiq.com/v1/reverse.php?key=${process.env.LOCATIONIQ_TOKEN}&lat=${lat}&lon=${lng}&format=json`
       );
-      
+      console.log("$$$$$ Response:", response);
       if (!response.ok) {
         throw new Error('Failed to fetch location data');
       }
 
       const data = await response.json();
-      // console.log("$$$$$ Location data:", JSON.stringify(data));
+      console.log("$$$$$ Location data:", JSON.stringify(data));
       
       // Extract relevant location information
       const address = data.address;
       const locationInfo = {
         city: address.city || address.town || address.village || 'Unknown city',
-        district: address.suburb || address.neighbourhood || 'Unknown district',
+        state: address.state || 'Unknown state',
         country: address.country || 'Unknown country'
       };
 
       // Update the MiraAgent with location context
       this.agentPerSession.get(sessionId)?.updateLocationContext(locationInfo);
       
-      // console.log(`User location: ${locationInfo.city}, ${locationInfo.district}, ${locationInfo.country}`);
+      // console.log(`User location: ${locationInfo.city}, ${locationInfo.state}, ${locationInfo.country}`);
     } catch (error) {
       console.error('Error processing location:', error);
       // Update MiraAgent with fallback location context
       this.agentPerSession.get(sessionId)?.updateLocationContext({
         city: 'Unknown',
-        district: 'Unknown',
+        state: 'Unknown',
         country: 'Unknown'
       });
     }

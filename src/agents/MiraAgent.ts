@@ -10,6 +10,7 @@ import { AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage } from
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { Tool } from "langchain/tools";
 import { TpaCommandsTool } from "./tools/TpaCommandsTool";
+import { TimerTool } from "./tools/TimerTool";
 
 interface QuestionAnswer {
     insight: string;
@@ -45,16 +46,22 @@ export class MiraAgent implements Agent {
 
   private locationContext: {
     city: string;
-    district: string;
+    state: string;
     country: string;
   } = {
     city: 'Unknown',
-    district: 'Unknown',
+    state: 'Unknown',
     country: 'Unknown'
   };
 
+  private session: any;
+
   constructor(userId: string) {
-    this.agentTools = [new SearchToolForAgents(), new TpaCommandsTool(userId)];
+    this.agentTools = [
+      new SearchToolForAgents(),
+      new TpaCommandsTool(userId),
+      new TimerTool()
+    ];
   }
 
   /**
@@ -62,7 +69,7 @@ export class MiraAgent implements Agent {
    */
   public updateLocationContext(locationInfo: {
     city: string;
-    district: string;
+    state: string;
     country: string;
   }): void {
     this.locationContext = locationInfo;
@@ -119,12 +126,12 @@ export class MiraAgent implements Agent {
       console.log("Location Context:", this.locationContext);
       // Only add location context if we have a valid city
       const locationInfo = this.locationContext.city !== 'Unknown'
-      ? `For context the User is currently in ${this.locationContext.city}, ${this.locationContext.district}, ${this.locationContext.country}.`
+      ? `For context the User is currently in ${this.locationContext.city}, ${this.locationContext.state}, ${this.locationContext.country}.`
       : '';
 
       const llm = LLMProvider.getLLM().bindTools(this.agentTools);
       const toolNames = this.agentTools.map((tool) => tool.name+": "+tool.description || "");
-      
+
       // Replace the {tool_names} placeholder with actual tool names and descriptions
       const systemPrompt = systemPromptBlueprint.replace(
         "{tool_names}",
@@ -140,21 +147,30 @@ export class MiraAgent implements Agent {
         this.messages.push(result);
 
         const output: string = result.content.toString();
-        
+
         if (result.tool_calls) {
           for (const toolCall of result.tool_calls) {
             const selectedTool = this.agentTools.find(tool => tool.name === toolCall.name);
             if (selectedTool) {
-              const toolMessage:ToolMessage = await selectedTool.invoke(toolCall);
+              const toolMessage: ToolMessage = await selectedTool.invoke(toolCall);
               if (toolMessage.content == "" || toolMessage.content == null) {
                 toolMessage.content = "Tool executed successfully but did not return any information.";
               }
-              console.log("Tool Result:", toolMessage.content);
+              // Always push the tool message
               this.messages.push(toolMessage);
+              // Check for timer event
+              if (typeof toolMessage.content === 'string') {
+                try {
+                  const parsed = JSON.parse(toolMessage.content);
+                  if (parsed && parsed.event === 'timer_set' && parsed.duration) {
+                    return toolMessage.content; // Return timer event JSON directly
+                  }
+                } catch (e) { /* not JSON, ignore */ }
+              }
             }
           }
         }
-        
+
         const finalMarker = "Final Answer:";
         if (output.includes(finalMarker)) {
           console.log("Final Answer:", output);
