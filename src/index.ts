@@ -181,6 +181,10 @@ class TranscriptionManager {
     const transcriptResponse = await fetch(backendUrl);
     const transcriptionResponse = await transcriptResponse.json();
 
+    console.log("$$$$$ Backend URL:", backendUrl);
+    console.log("$$$$$ Transcript response:", transcriptResponse);
+    console.log("$$$$$ Transcription response:", transcriptionResponse);
+
     const rawCombinedText = transcriptionResponse.segments.map((segment: any) => segment.text).join(' ');
     // console.log(`Raw combined text: ${rawCombinedText}`);
     // console.log(`Transcription data: ${rawText}`);
