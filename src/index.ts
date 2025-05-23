@@ -338,6 +338,17 @@ class TranscriptionManager {
   }
 }
 
+// Utility to clean and convert ws(s)://.../tpa-ws to https://... for API calls
+function getCleanServerUrl(rawUrl: string | undefined): string {
+  if (!rawUrl) return '';
+  // Remove ws:// or wss://
+  let url = rawUrl.replace(/^wss?:\/\//, '');
+  // Remove trailing /tpa-ws
+  url = url.replace(/\/tpa-ws$/, '');
+  // Prepend https://
+  return `https://${url}`;
+}
+
 /**
  * Main Mira TPA server class
  */
@@ -351,7 +362,7 @@ class MiraServer extends TpaServer {
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`Setting up Mira service for session ${sessionId}, user ${userId}`);
 
-    console.log("$$$$$ Server URL:", session.getServerUrl());
+    console.log("$$$$$ Server URL:", getCleanServerUrl(session.getServerUrl()));
 
     const agent = new MiraAgent(userId);
     // Start fetching tools asynchronously without blocking
@@ -370,7 +381,7 @@ class MiraServer extends TpaServer {
 
     // Create transcription manager for this session
     const transcriptionManager = new TranscriptionManager(
-      session, sessionId, userId, agent, session.getServerUrl() || ''
+      session, sessionId, userId, agent, getCleanServerUrl(session.getServerUrl())
     );
     this.transcriptionManagers.set(sessionId, transcriptionManager);
 
