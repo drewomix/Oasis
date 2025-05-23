@@ -10,7 +10,7 @@ import { getAllToolsForUser } from './agents/tools/TpaTool';
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
-const LOCATIONIQ_TOKEN = process.env.LOCATIONIQ_TOKEN
+const LOCATIONIQ_TOKEN = process.env.LOCATIONIQ_TOKEN;
 
 if (!AUGMENTOS_API_KEY) {
   throw new Error('AUGMENTOS_API_KEY is not set');
@@ -179,9 +179,9 @@ class TranscriptionManager {
     const transcriptResponse = await fetch(backendUrl);
     const transcriptionResponse = await transcriptResponse.json();
 
-    console.log("$$$$$ Backend URL:", backendUrl);
-    console.log("$$$$$ Transcript response:", transcriptResponse);
-    console.log("$$$$$ Transcription response:", transcriptionResponse);
+    // console.log("$$$$$ Backend URL:", backendUrl);
+    // console.log("$$$$$ Transcript response:", transcriptResponse);
+    // console.log("$$$$$ Transcription response:", transcriptionResponse);
 
     const rawCombinedText = transcriptionResponse.segments.map((segment: any) => segment.text).join(' ');
     // console.log(`Raw combined text: ${rawCombinedText}`);
@@ -197,9 +197,9 @@ class TranscriptionManager {
     try {
       // Remove wake word from query
       const query = this.removeWakeWord(rawCombinedText);
-      console.log(`[Session ${this.sessionId}]: Processing query: "${query}"`);
+      // console.log(`[Session ${this.sessionId}]: Processing query: "${query}"`);
 
-      console.log(`[Session ${this.sessionId}]: Processing query: "${query}"`);
+      // console.log(`[Session ${this.sessionId}]: Processing query: "${query}"`);
 
       if (query.trim().length === 0) {
         this.session.layouts.showTextWall(
@@ -362,7 +362,7 @@ class MiraServer extends TpaServer {
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`Setting up Mira service for session ${sessionId}, user ${userId}`);
 
-    console.log("$$$$$ Server URL:", getCleanServerUrl(session.getServerUrl()));
+    // console.log("$$$$$ Server URL:", getCleanServerUrl(session.getServerUrl()));
 
     const agent = new MiraAgent(userId);
     // Start fetching tools asynchronously without blocking
