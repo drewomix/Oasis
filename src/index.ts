@@ -10,7 +10,7 @@ import { getAllToolsForUser } from './agents/tools/TpaTool';
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
-const CLOUD_HOST_NAME = process.env.CLOUD_HOST_NAME;
+const LOCATIONIQ_TOKEN = process.env.LOCATIONIQ_TOKEN
 
 if (!AUGMENTOS_API_KEY) {
   throw new Error('AUGMENTOS_API_KEY is not set');
@@ -18,10 +18,6 @@ if (!AUGMENTOS_API_KEY) {
 
 if (!PACKAGE_NAME) {
   throw new Error('PACKAGE_NAME is not set');
-}
-
-if (!CLOUD_HOST_NAME) {
-  throw new Error('CLOUD_HOST_NAME is not set');
 }
 
 console.log(`Starting ${PACKAGE_NAME} server on port ${PORT}...`);
@@ -86,12 +82,14 @@ class TranscriptionManager {
   private miraAgent: MiraAgent;
   private transcriptionStartTime: number = 0;
   private activeTimers: Map<string, NodeJS.Timeout> = new Map(); // timerId -> timeoutId
+  private serverUrl: string;
 
-  constructor(session: TpaSession, sessionId: string, userId: string, miraAgent: MiraAgent) {
+  constructor(session: TpaSession, sessionId: string, userId: string, miraAgent: MiraAgent, serverUrl: string) {
     this.session = session;
     this.sessionId = sessionId;
     this.userId = userId;
     this.miraAgent = miraAgent;
+    this.serverUrl = serverUrl;
   }
 
   /**
@@ -177,7 +175,7 @@ class TranscriptionManager {
     }
 
     // Use the calculated duration in the backend URL
-    const backendUrl = `http://${CLOUD_HOST_NAME}/api/transcripts/${this.sessionId}?duration=${durationSeconds}`;
+    const backendUrl = `${this.serverUrl}/api/transcripts/${this.sessionId}?duration=${durationSeconds}`;
     const transcriptResponse = await fetch(backendUrl);
     const transcriptionResponse = await transcriptResponse.json();
 
@@ -352,6 +350,9 @@ class MiraServer extends TpaServer {
    */
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`Setting up Mira service for session ${sessionId}, user ${userId}`);
+
+    console.log("$$$$$ Server URL:", session.getServerUrl());
+
     const agent = new MiraAgent(userId);
     // Start fetching tools asynchronously without blocking
     getAllToolsForUser(userId).then(tools => {
@@ -369,7 +370,7 @@ class MiraServer extends TpaServer {
 
     // Create transcription manager for this session
     const transcriptionManager = new TranscriptionManager(
-      session, sessionId, userId, agent
+      session, sessionId, userId, agent, session.getServerUrl() || ''
     );
     this.transcriptionManagers.set(sessionId, transcriptionManager);
 
@@ -426,7 +427,7 @@ class MiraServer extends TpaServer {
 
       // Use LocationIQ for reverse geocoding
       const response = await fetch(
-        `https://us1.locationiq.com/v1/reverse.php?key=${process.env.LOCATIONIQ_TOKEN}&lat=${lat}&lon=${lng}&format=json`
+        `https://us1.locationiq.com/v1/reverse.php?key=${LOCATIONIQ_TOKEN}&lat=${lat}&lon=${lng}&format=json`
       );
       // console.log("$$$$$ Response:", response);
       if (!response.ok) {
