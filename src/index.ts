@@ -364,9 +364,9 @@ class MiraServer extends TpaServer {
 
     // console.log("$$$$$ Server URL:", getCleanServerUrl(session.getServerUrl()));
 
-    const agent = new MiraAgent(userId);
-    // Start fetching tools asynchronously without blocking
     const cleanServerUrl = getCleanServerUrl(session.getServerUrl());
+    const agent = new MiraAgent(cleanServerUrl, userId);
+    // Start fetching tools asynchronously without blocking
     getAllToolsForUser(cleanServerUrl, userId).then(tools => {
       // Append tools to agent when they're available
       if (tools.length > 0) {

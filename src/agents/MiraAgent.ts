@@ -62,10 +62,10 @@ export class MiraAgent implements Agent {
     country: 'Unknown'
   };
 
-  constructor(userId: string) {
+  constructor(cloudUrl: string, userId: string) {
     this.agentTools = [
       new SearchToolForAgents(),
-      new TpaCommandsTool(userId),
+      new TpaCommandsTool(cloudUrl, userId),
       new TimerTool()
     ];
   }
