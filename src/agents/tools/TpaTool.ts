@@ -4,19 +4,18 @@ import { AppI, ToolSchema, ToolCall } from '@augmentos/sdk';
 import axios, { AxiosError } from 'axios';
 
 
-const CLOUD_URL = "https://"+process.env.CLOUD_HOST_NAME;
-
 /**
  * Fetches all available tools for a specified package from the cloud service.
  * 
+ * @param cloudUrl - The URL of the cloud service
  * @param tpaPackageName - The name of the third-party application package
  * @returns A promise that resolves to an array of tool schemas
  * @throws AxiosError if the network request fails
  */
 
-export async function getAllToolsForPackage(tpaPackageName: string, actingUserId: string) {
+export async function getAllToolsForPackage(cloudUrl: string, tpaPackageName: string, actingUserId: string) {
   // Get the tools from the cloud
-  const urlToGetTools = `${CLOUD_URL}/api/tools/apps/${tpaPackageName}/tools`;
+  const urlToGetTools = `${cloudUrl}/api/tools/apps/${tpaPackageName}/tools`;
   const response = await axios.get<ToolSchema[]>(urlToGetTools);
   const toolSchemas = response.data;
 
@@ -26,11 +25,11 @@ export async function getAllToolsForPackage(tpaPackageName: string, actingUserId
   }
 
   // Compile the tools
-  const tools = toolSchemas.map(toolSchema => compileTool(tpaPackageName, toolSchema, actingUserId));
+  const tools = toolSchemas.map(toolSchema => compileTool(cloudUrl, tpaPackageName, toolSchema, actingUserId));
   return tools;
 }
 
-export function compileTool(tpaPackageName: string, tpaTool: ToolSchema, actingUserId: string) {
+export function compileTool(cloudUrl: string, tpaPackageName: string, tpaTool: ToolSchema, actingUserId: string) {
   const paramsSchema = tpaTool.parameters ? z.object(
     Object.entries(tpaTool.parameters).reduce((schema, [key, param]) => {
       // Start with the base schema based on type
@@ -71,7 +70,7 @@ export function compileTool(tpaPackageName: string, tpaTool: ToolSchema, actingU
   return tool(
     async (input): Promise<string> => {
       // Construct the webhook URL for the TPA tool
-      const webhookUrl = CLOUD_URL + `/api/tools/apps/${tpaPackageName}/tool`;
+      const webhookUrl = cloudUrl + `/api/tools/apps/${tpaPackageName}/tool`;
 
       // Prepare the payload with the input parameters
       // Check if input is a string and set payload accordingly
@@ -132,10 +131,10 @@ export function compileTool(tpaPackageName: string, tpaTool: ToolSchema, actingU
  * @returns A promise that resolves to an array of tools from all installed apps
  * @throws Error if authentication fails or if there are issues fetching apps/tools
  */
-export async function getAllToolsForUser(userId: string) {
+export async function getAllToolsForUser(cloudUrl: string, userId: string) {
   try {
     // Construct the URL to get all tools for the user
-    const urlToGetUserTools = `${CLOUD_URL}/api/tools/users/${userId}/tools`;
+    const urlToGetUserTools = `${cloudUrl}/api/tools/users/${userId}/tools`;
     
     // Make the request to get all tools for the user
     const response = await axios.get<Array<ToolSchema & { appPackageName: string }>>(urlToGetUserTools);
@@ -151,7 +150,7 @@ export async function getAllToolsForUser(userId: string) {
       console.log(`Processing tool: ${toolSchema.id} from app: ${toolSchema.appPackageName}`);
       
       // Compile each tool with its associated package name
-      const compiledTool = compileTool(toolSchema.appPackageName, toolSchema, userId);
+      const compiledTool = compileTool(cloudUrl, toolSchema.appPackageName, toolSchema, userId);
       tools.push(compiledTool);
     }
     

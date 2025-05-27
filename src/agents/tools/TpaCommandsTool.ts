@@ -2,11 +2,9 @@ import { Tool } from '@langchain/core/tools';
 import axios from 'axios';
 import { z } from 'zod';
 
-const CLOUD_URL = "https://"+process.env.CLOUD_HOST_NAME;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
 
-console.log("$$$$$ CLOUD_URL:", CLOUD_URL);
 console.log("$$$$$ AUGMENTOS_API_KEY:", AUGMENTOS_API_KEY);
 console.log("$$$$$ PACKAGE_NAME:", PACKAGE_NAME);
 
@@ -28,9 +26,11 @@ export class TpaCommandsTool extends Tool {
   name = 'TPA_Commands';
   description = 'Start or stop apps on smart glasses. Use this tool when a user asks to close, open, start, or stop an app. Input: { "action": "start"|"stop", "packageName": string } or a string like "close this app" or "stop [app name]".';
   private userId: string;
+  private cloudUrl: string;
 
-  constructor(userId: string) {
+  constructor(cloudUrl: string, userId: string) {
     super();
+    this.cloudUrl = cloudUrl;
     this.userId = userId;
   }
 
@@ -117,7 +117,7 @@ export class TpaCommandsTool extends Tool {
   private async getAllApps(): Promise<AppInfo[]> {
     try {
       // Use the correct API endpoint from the routes file
-      const url = `${CLOUD_URL}/api/apps?apiKey=${AUGMENTOS_API_KEY}&packageName=${PACKAGE_NAME}&userId=${this.userId}`;
+      const url = `${this.cloudUrl}/api/apps?apiKey=${AUGMENTOS_API_KEY}&packageName=${PACKAGE_NAME}&userId=${this.userId}`;
       const response = await axios.get(url);
       
       // Check if the response has the expected structure
@@ -150,7 +150,7 @@ export class TpaCommandsTool extends Tool {
   private async executeCommand(action: string, packageName: string): Promise<string> {
     try {
       // Use the correct API endpoint from the routes file
-      const url = `${CLOUD_URL}/api/apps/${packageName}/${action}?apiKey=${AUGMENTOS_API_KEY}&packageName=${PACKAGE_NAME}&userId=${this.userId}`;
+      const url = `${this.cloudUrl}/api/apps/${packageName}/${action}?apiKey=${AUGMENTOS_API_KEY}&packageName=${PACKAGE_NAME}&userId=${this.userId}`;
       console.log(`[TPA_Commands] Executing command: ${action} for package: ${packageName}`);
       console.log(`[TPA_Commands] Request URL:`, url);
       const response = await axios.post(url);

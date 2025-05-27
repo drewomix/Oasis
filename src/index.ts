@@ -366,7 +366,8 @@ class MiraServer extends TpaServer {
 
     const agent = new MiraAgent(userId);
     // Start fetching tools asynchronously without blocking
-    getAllToolsForUser(userId).then(tools => {
+    const cleanServerUrl = getCleanServerUrl(session.getServerUrl());
+    getAllToolsForUser(cleanServerUrl, userId).then(tools => {
       // Append tools to agent when they're available
       if (tools.length > 0) {
         agent.agentTools.push(...tools);
@@ -381,7 +382,7 @@ class MiraServer extends TpaServer {
 
     // Create transcription manager for this session
     const transcriptionManager = new TranscriptionManager(
-      session, sessionId, userId, agent, getCleanServerUrl(session.getServerUrl())
+      session, sessionId, userId, agent, cleanServerUrl
     );
     this.transcriptionManagers.set(sessionId, transcriptionManager);
 
