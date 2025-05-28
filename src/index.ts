@@ -4,7 +4,7 @@ import {
   TpaServer
 } from '@augmentos/sdk';
 import { MiraAgent } from './agents';
-import { wrapText } from './utils';
+import { wrapText, TranscriptProcessor } from './utils';
 import { getAllToolsForUser } from './agents/tools/TpaTool';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
@@ -75,6 +75,7 @@ const notificationsManager = new NotificationsManager();
  */
 class TranscriptionManager {
   private isProcessingQuery: boolean = false;
+  private isListeningToQuery: boolean = false;
   private timeoutId?: NodeJS.Timeout;
   private session: TpaSession;
   private sessionId: string;
@@ -83,6 +84,7 @@ class TranscriptionManager {
   private transcriptionStartTime: number = 0;
   private activeTimers: Map<string, NodeJS.Timeout> = new Map(); // timerId -> timeoutId
   private serverUrl: string;
+  private transcriptProcessor: TranscriptProcessor;
 
   constructor(session: TpaSession, sessionId: string, userId: string, miraAgent: MiraAgent, serverUrl: string) {
     this.session = session;
@@ -90,6 +92,8 @@ class TranscriptionManager {
     this.userId = userId;
     this.miraAgent = miraAgent;
     this.serverUrl = serverUrl;
+    // Use same settings as LiveCaptions for now
+    this.transcriptProcessor = new TranscriptProcessor(30, 3, 3, false);
   }
 
   /**
@@ -104,40 +108,52 @@ class TranscriptionManager {
 
     const text = transcriptionData.text;
     // Clean the text: lowercase and remove punctuation for easier matching
-    const cleanedText = text.toLowerCase().replace(/[^\w\s]/g, '').trim();
+    const cleanedText = text
+      .toLowerCase()
+      .replace(/[.,!?;:]/g, '') // remove all punctuation
+      .replace(/\s+/g, ' ')     // normalize whitespace
+      .trim();
     const hasWakeWord = explicitWakeWords.some(word => cleanedText.includes(word));
 
-
-    // console.log(`[Session ${this.sessionId}]: Transcription data: ${cleanedText}`);
-    // console.log(`[Session ${this.sessionId}]: Has wake word: ${hasWakeWord}`);
-
-    if (!hasWakeWord) {
+    if (!hasWakeWord && !this.isListeningToQuery) {
       console.log('No wake word detected');
       return;
     }
 
-    // console.log(`[Session ${this.sessionId}]: Wake word detected in text "${text}"`);
+    this.isListeningToQuery = true;
 
     // If this is our first detection, start the transcription timer
     if (this.transcriptionStartTime === 0) {
       this.transcriptionStartTime = Date.now();
     }
 
-    // Send immediate display feedback
-    this.session.layouts.showTextWall(
-      "Listening...",
-      { durationMs: 10000 }
-    );
+    // Remove wake word for display
+    const displayText = this.removeWakeWord(text);
+    // Only show 'Listening...' if there is no text after the wake word and nothing has been shown yet
+    if (displayText.trim().length === 0) {
+      // Show 'Listening...' only if the last shown text was not 'Listening...'
+      if (this.transcriptProcessor.getLastUserTranscript().trim().length !== 0) {
+        this.transcriptProcessor.processString('', false); // Clear the partial
+      }
+      this.session.layouts.showTextWall("Listening...", { durationMs: 10000 });
+    } else {
+      // Show the live query as the user is talking
+      let formatted = this.transcriptProcessor.processString(displayText, !!transcriptionData.isFinal).trim();
+      // Add a listening indicator if not final
+      formatted += '\n[Listening...]';
+      this.session.layouts.showTextWall(formatted, { durationMs: 10000 });
+    }
 
     let timerDuration: number;
 
+    console.log("$$$$$ transcriptionData:", transcriptionData);
     if (transcriptionData.isFinal) {
-      // console.log("$$$$$ transcriptionData.isFinal:", transcriptionData.isFinal);
+      console.log("$$$$$ transcriptionData.isFinal:", transcriptionData.isFinal);
       // Check if the final transcript ends with a wake word
       if (this.endsWithWakeWord(cleanedText)) {
         // If it ends with just a wake word, wait longer for additional query text
         console.log("$$$$$ transcriptionData.isFinal: ends with wake word");
-        timerDuration = 8000;
+        timerDuration = 10000;
       } else {
         console.log("$$$$$ transcriptionData.isFinal: does not end with wake word");
         // Final transcript with additional content should be processed soon
@@ -156,7 +172,6 @@ class TranscriptionManager {
 
     // Set a new timeout to process the query
     this.timeoutId = setTimeout(() => {
-      // Pass the timerDuration for fallback, but processQuery will calculate the real duration
       this.processQuery(text, timerDuration);
     }, timerDuration);
   }
@@ -179,13 +194,7 @@ class TranscriptionManager {
     const transcriptResponse = await fetch(backendUrl);
     const transcriptionResponse = await transcriptResponse.json();
 
-    // console.log("$$$$$ Backend URL:", backendUrl);
-    // console.log("$$$$$ Transcript response:", transcriptResponse);
-    // console.log("$$$$$ Transcription response:", transcriptionResponse);
-
     const rawCombinedText = transcriptionResponse.segments.map((segment: any) => segment.text).join(' ');
-    // console.log(`Raw combined text: ${rawCombinedText}`);
-    // console.log(`Transcription data: ${rawText}`);
 
     // Prevent multiple queries from processing simultaneously
     if (this.isProcessingQuery) {
@@ -197,21 +206,22 @@ class TranscriptionManager {
     try {
       // Remove wake word from query
       const query = this.removeWakeWord(rawCombinedText);
-      // console.log(`[Session ${this.sessionId}]: Processing query: "${query}"`);
-
-      // console.log(`[Session ${this.sessionId}]: Processing query: "${query}"`);
 
       if (query.trim().length === 0) {
         this.session.layouts.showTextWall(
-          wrapText("No query provided", 30),
+          wrapText("No query provided.", 30),
           { durationMs: 5000 }
         );
         return;
       }
 
       // Show the query being processed
+      let displayQuery = query;
+      if (displayQuery.length > 60) {
+        displayQuery = displayQuery.slice(0, 60).trim() + ' ...';
+      }
       this.session.layouts.showTextWall(
-        wrapText("Processing query: " + query, 30),
+        wrapText("Processing query: " + displayQuery, 30),
         { durationMs: 8000 }
       );
 
@@ -286,10 +296,16 @@ class TranscriptionManager {
         this.timeoutId = undefined;
       }
 
+      // Reset listening state
+      this.isListeningToQuery = false;
+
+      // Clear transcript processor for next query
+      this.transcriptProcessor.clear();
+
       // Reset processing state after a delay
       setTimeout(() => {
         this.isProcessingQuery = false;
-      }, 1000);
+      }, 2000);
     }
   }
 
@@ -314,8 +330,14 @@ class TranscriptionManager {
    * Check if text ends with a wake word
    */
   private endsWithWakeWord(text: string): boolean {
+    console.log("$$$$$ text:", text);
     // Remove trailing punctuation and whitespace, lowercase
-    const cleanedText = text.trim().replace(/[\s.,!?;:]+$/, '').toLowerCase();
+    const cleanedText = text
+      .toLowerCase()
+      .replace(/[.,!?;:]/g, '') // remove all punctuation
+      .replace(/\s+/g, ' ')     // normalize whitespace
+      .trim();
+    console.log("$$$$$ cleanedText:", cleanedText);
     return explicitWakeWords.some(word => {
       // Build a regex to match the wake word at the end, allowing for punctuation/whitespace
       const pattern = new RegExp(`${word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i');
@@ -362,8 +384,6 @@ class MiraServer extends TpaServer {
   protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
     console.log(`Setting up Mira service for session ${sessionId}, user ${userId}`);
 
-    // console.log("$$$$$ Server URL:", getCleanServerUrl(session.getServerUrl()));
-
     const cleanServerUrl = getCleanServerUrl(session.getServerUrl());
     const agent = new MiraAgent(cleanServerUrl, userId);
     // Start fetching tools asynchronously without blocking
@@ -377,8 +397,6 @@ class MiraServer extends TpaServer {
       console.error(`Failed to load tools for user ${userId}:`, error);
     });
     this.agentPerSession.set(sessionId, agent);
-
-    // console.log("$$$$$ Agent:", agent.agentTools);
 
     // Create transcription manager for this session
     const transcriptionManager = new TranscriptionManager(

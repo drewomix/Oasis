@@ -44,6 +44,8 @@
     "cookie-parser": "^1.4.7",
     "express": "^4.21.2",
     "langchain": "^0.3.24",
+    "pinyin-pro": "^3.26.0",
+    "@node-rs/jieba": "^2.0.1",
     "path": "^0.12.7",
     "uuid": "^11.1.0",
     "ws": "^8.18.1"
