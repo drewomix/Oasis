@@ -24,7 +24,7 @@ const TpaCommandsInputSchema = z.object({
 
 export class TpaCommandsTool extends Tool {
   name = 'TPA_Commands';
-  description = 'Start or stop apps on smart glasses. Use this tool when a user asks to close, open, start, or stop an app. Input: { "action": "start"|"stop", "packageName": string } or a string like "close this app" or "stop [app name]".';
+  description = 'Start or stop apps on smart glasses. Use this tool when a user asks to close, open, start, or stop an app. If the user asks to open or start an app, and there is any app whose name matches the request in any way (even partially), confidently execute the request without asking for clarification. Input: { "action": "start"|"stop", "packageName": string } or a string like "close this app" or "stop [app name]".';
   private userId: string;
   private cloudUrl: string;
 
