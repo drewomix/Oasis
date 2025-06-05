@@ -68,8 +68,8 @@ export class MiraAgent implements Agent {
       new SearchToolForAgents(),
       new TpaCommandsTool(cloudUrl, userId),
       new TimerTool(),
-      new FetchTasksTool(),
-      new CreateTaskTool()
+      // new FetchTasksTool(),
+      // new CreateTaskTool()
     ];
   }
 
