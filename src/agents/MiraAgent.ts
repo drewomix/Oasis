@@ -12,7 +12,6 @@ import { Tool } from "langchain/tools";
 import { TpaCommandsTool } from "./tools/TpaCommandsTool";
 import { TimerTool } from "./tools/TimerTool";
 import { FetchTasksTool, CreateTaskTool } from "./tools/TaskManagementTools";
-import zodToJsonSchema from "zod-to-json-schema";
 
 interface QuestionAnswer {
     insight: string;
@@ -170,19 +169,9 @@ export class MiraAgent implements Agent {
 
         if (result.tool_calls) {
           for (const toolCall of result.tool_calls) {
-            const selectedTool: Tool = this.agentTools.find(tool => tool.name === toolCall.name) as Tool;
-
+            const selectedTool = this.agentTools.find(tool => tool.name === toolCall.name);
             if (selectedTool) {
               try {
-                console.log("MiraAgent: Calling tool:", toolCall.name);
-                console.log("MiraAgent: Tool call arguments:", toolCall.args);
-                console.log("MiraAgent: Tool call id:", toolCall.id);
-                console.log("MiraAgent: Tool call:", toolCall);
-                console.log("MiraAgent: Selected tool name:", selectedTool.name);
-                console.log("MiraAgent: Selected tool description:", selectedTool.description);
-                // Convert Zod schema to JSON Schema format for better readability
-                const jsonSchema = selectedTool.schema ? zodToJsonSchema(selectedTool.schema) : null;
-                console.log("MiraAgent: Selected tool schema (JSON):", JSON.stringify(jsonSchema, null, 2));
                 const toolMessage: ToolMessage = await selectedTool.invoke(toolCall);
                 if (toolMessage.content == "" || toolMessage.content == null) {
                   toolMessage.content = "MiraAgent: Tool executed successfully but did not return any information.";
