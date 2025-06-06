@@ -32,11 +32,10 @@ Utilize available tools when necessary and adhere to the following guidelines:
 7. For context, today's date is ${new Date().toUTCString().split(' ').slice(0,4).join(' ')}.
 8. If the user's query is location-specific (e.g., weather, news, events, or anything that depends on place), always use the user's current location context to provide the most relevant answer.
 
-The user is currently in:
 {location_context}
-
-The user's most recent notifications are:
 {notifications_context}
+Tools:
+{tool_names}
 
 Remember to always include the Final Answer: marker in your final response.`;
 
@@ -132,7 +131,7 @@ export class MiraAgent implements Agent {
       console.log("Location Context:", this.locationContext);
       // Only add location context if we have a valid city
       const locationInfo = this.locationContext.city !== 'Unknown'
-      ? `For context the User is currently in ${this.locationContext.city}, ${this.locationContext.state}, ${this.locationContext.country}.`
+      ? `For context the User is currently in ${this.locationContext.city}, ${this.locationContext.state}, ${this.locationContext.country}.\n\n`
       : '';
 
       // Add notifications context if present
@@ -146,7 +145,7 @@ export class MiraAgent implements Agent {
           if (n.text) return `- ${n.text}`;
           return `- Notification ${idx+1}`;
         }).join('\n');
-        notificationsContext = `Recent notifications:\n${notifs}`;
+        notificationsContext = `Recent notifications:\n${notifs}\n\n`;
       }
 
       const llm = LLMProvider.getLLM().bindTools(this.agentTools);
@@ -154,6 +153,7 @@ export class MiraAgent implements Agent {
 
       // Replace the {tool_names} placeholder with actual tool names and descriptions
       const systemPrompt = systemPromptBlueprint
+        .replace("{tool_names}", toolNames.join("\n"))
         .replace("{location_context}", locationInfo)
         .replace("{notifications_context}", notificationsContext);
 
@@ -171,39 +171,26 @@ export class MiraAgent implements Agent {
           for (const toolCall of result.tool_calls) {
             const selectedTool = this.agentTools.find(tool => tool.name === toolCall.name);
             if (selectedTool) {
-              try {
-                const toolMessage: ToolMessage = await selectedTool.invoke(toolCall);
-                if (toolMessage.content == "" || toolMessage.content == null) {
-                  toolMessage.content = "MiraAgent: Tool executed successfully but did not return any information.";
-                }
-                if (toolMessage.id == null) {
-                  toolMessage.id = toolCall.id;
-                }
-                // Always push the tool message
-                this.messages.push(toolMessage);
-                // Check for timer event
-                if (typeof toolMessage.content === 'string') {
-                  try {
-                    const parsed = JSON.parse(toolMessage.content);
-                    if (parsed && parsed.event === 'timer_set' && parsed.duration) {
-                      return toolMessage.content; // Return timer event JSON directly
-                    }
-                  } catch (e) { /* not JSON, ignore */ }
-                }
-              } catch (error) {
-                // Handle tool execution errors gracefully
-                const errorMessage = new ToolMessage({
-                  content: `Calling tool "${toolCall.name}" with arguments:\n\n${JSON.stringify(
-                    toolCall.args
-                  )}\n\nraised the following error:\n\n${error}`,
-                  tool_call_id: toolCall.id || `error_${Date.now()}`,
-                  status: "error"
-                });
-                console.error(`[MiraAgent] Tool ${toolCall.name} failed:`, error);
-                this.messages.push(errorMessage);
+              const toolMessage: ToolMessage = await selectedTool.invoke(toolCall);
+              if (toolMessage.content == "" || toolMessage.content == null) {
+                toolMessage.content = "Tool executed successfully but did not return any information.";
+              }
+              if (toolMessage.id == null) {
+                toolMessage.id = toolCall.id;
+              }
+              // Always push the tool message
+              this.messages.push(toolMessage);
+              // Check for timer event
+              if (typeof toolMessage.content === 'string') {
+                try {
+                  const parsed = JSON.parse(toolMessage.content);
+                  if (parsed && parsed.event === 'timer_set' && parsed.duration) {
+                    return toolMessage.content; // Return timer event JSON directly
+                  }
+                } catch (e) { /* not JSON, ignore */ }
               }
             } else {
-              console.log("MiraAgent: Tried to call a tool that doesn't exist:", toolCall.name);
+              console.log("Tried to call a tool that doesn't exist:", toolCall.name);
               // Add a placeholder tool call message indicating the tool is unavailable
               const unavailableToolMessage = new ToolMessage({
                 content: `Tool ${toolCall.name} unavailable`,
