@@ -12,6 +12,7 @@ import { Tool } from "langchain/tools";
 import { TpaCommandsTool } from "./tools/TpaCommandsTool";
 import { TimerTool } from "./tools/TimerTool";
 import { FetchTasksTool, CreateTaskTool } from "./tools/TaskManagementTools";
+import zodToJsonSchema from "zod-to-json-schema";
 
 interface QuestionAnswer {
     insight: string;
@@ -37,9 +38,6 @@ The user is currently in:
 
 The user's most recent notifications are:
 {notifications_context}
-
-Tools:
-{tool_names}
 
 Remember to always include the Final Answer: marker in your final response.`;
 
@@ -157,14 +155,13 @@ export class MiraAgent implements Agent {
 
       // Replace the {tool_names} placeholder with actual tool names and descriptions
       const systemPrompt = systemPromptBlueprint
-        .replace("{tool_names}", toolNames.join("\n"))
         .replace("{location_context}", locationInfo)
         .replace("{notifications_context}", notificationsContext);
 
       this.messages.push(new SystemMessage(systemPrompt));
       this.messages.push(new HumanMessage(query));
 
-      while (turns < 5) {  
+      while (turns < 5) {
         // Invoke the chain with the query
         const result: AIMessage = await llm.invoke(this.messages);
         this.messages.push(result);
@@ -173,23 +170,58 @@ export class MiraAgent implements Agent {
 
         if (result.tool_calls) {
           for (const toolCall of result.tool_calls) {
-            const selectedTool = this.agentTools.find(tool => tool.name === toolCall.name);
+            const selectedTool: Tool = this.agentTools.find(tool => tool.name === toolCall.name) as Tool;
+
             if (selectedTool) {
-              const toolMessage: ToolMessage = await selectedTool.invoke(toolCall);
-              if (toolMessage.content == "" || toolMessage.content == null) {
-                toolMessage.content = "Tool executed successfully but did not return any information.";
+              try {
+                console.log("MiraAgent: Calling tool:", toolCall.name);
+                console.log("MiraAgent: Tool call arguments:", toolCall.args);
+                console.log("MiraAgent: Tool call id:", toolCall.id);
+                console.log("MiraAgent: Tool call:", toolCall);
+                console.log("MiraAgent: Selected tool name:", selectedTool.name);
+                console.log("MiraAgent: Selected tool description:", selectedTool.description);
+                // Convert Zod schema to JSON Schema format for better readability
+                const jsonSchema = selectedTool.schema ? zodToJsonSchema(selectedTool.schema) : null;
+                console.log("MiraAgent: Selected tool schema (JSON):", JSON.stringify(jsonSchema, null, 2));
+                const toolMessage: ToolMessage = await selectedTool.invoke(toolCall);
+                if (toolMessage.content == "" || toolMessage.content == null) {
+                  toolMessage.content = "MiraAgent: Tool executed successfully but did not return any information.";
+                }
+                if (toolMessage.id == null) {
+                  toolMessage.id = toolCall.id;
+                }
+                // Always push the tool message
+                this.messages.push(toolMessage);
+                // Check for timer event
+                if (typeof toolMessage.content === 'string') {
+                  try {
+                    const parsed = JSON.parse(toolMessage.content);
+                    if (parsed && parsed.event === 'timer_set' && parsed.duration) {
+                      return toolMessage.content; // Return timer event JSON directly
+                    }
+                  } catch (e) { /* not JSON, ignore */ }
+                }
+              } catch (error) {
+                // Handle tool execution errors gracefully
+                const errorMessage = new ToolMessage({
+                  content: `Calling tool "${toolCall.name}" with arguments:\n\n${JSON.stringify(
+                    toolCall.args
+                  )}\n\nraised the following error:\n\n${error}`,
+                  tool_call_id: toolCall.id || `error_${Date.now()}`,
+                  status: "error"
+                });
+                console.error(`[MiraAgent] Tool ${toolCall.name} failed:`, error);
+                this.messages.push(errorMessage);
               }
-              // Always push the tool message
-              this.messages.push(toolMessage);
-              // Check for timer event
-              if (typeof toolMessage.content === 'string') {
-                try {
-                  const parsed = JSON.parse(toolMessage.content);
-                  if (parsed && parsed.event === 'timer_set' && parsed.duration) {
-                    return toolMessage.content; // Return timer event JSON directly
-                  }
-                } catch (e) { /* not JSON, ignore */ }
-              }
+            } else {
+              console.log("MiraAgent: Tried to call a tool that doesn't exist:", toolCall.name);
+              // Add a placeholder tool call message indicating the tool is unavailable
+              const unavailableToolMessage = new ToolMessage({
+                content: `Tool ${toolCall.name} unavailable`,
+                tool_call_id: toolCall.id || `unknown_${Date.now()}`,
+                status: "error"
+              });
+              this.messages.push(unavailableToolMessage);
             }
           }
         }
