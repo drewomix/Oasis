@@ -32,12 +32,8 @@ Utilize available tools when necessary and adhere to the following guidelines:
 7. For context, today's date is ${new Date().toUTCString().split(' ').slice(0,4).join(' ')}.
 8. If the user's query is location-specific (e.g., weather, news, events, or anything that depends on place), always use the user's current location context to provide the most relevant answer.
 
-The user is currently in:
 {location_context}
-
-The user's most recent notifications are:
 {notifications_context}
-
 Tools:
 {tool_names}
 
@@ -135,7 +131,7 @@ export class MiraAgent implements Agent {
       console.log("Location Context:", this.locationContext);
       // Only add location context if we have a valid city
       const locationInfo = this.locationContext.city !== 'Unknown'
-      ? `For context the User is currently in ${this.locationContext.city}, ${this.locationContext.state}, ${this.locationContext.country}.`
+      ? `For context the User is currently in ${this.locationContext.city}, ${this.locationContext.state}, ${this.locationContext.country}.\n\n`
       : '';
 
       // Add notifications context if present
@@ -149,7 +145,7 @@ export class MiraAgent implements Agent {
           if (n.text) return `- ${n.text}`;
           return `- Notification ${idx+1}`;
         }).join('\n');
-        notificationsContext = `Recent notifications:\n${notifs}`;
+        notificationsContext = `Recent notifications:\n${notifs}\n\n`;
       }
 
       const llm = LLMProvider.getLLM().bindTools(this.agentTools);
@@ -164,7 +160,7 @@ export class MiraAgent implements Agent {
       this.messages.push(new SystemMessage(systemPrompt));
       this.messages.push(new HumanMessage(query));
 
-      while (turns < 5) {  
+      while (turns < 5) {
         // Invoke the chain with the query
         const result: AIMessage = await llm.invoke(this.messages);
         this.messages.push(result);
@@ -179,6 +175,9 @@ export class MiraAgent implements Agent {
               if (toolMessage.content == "" || toolMessage.content == null) {
                 toolMessage.content = "Tool executed successfully but did not return any information.";
               }
+              if (toolMessage.id == null) {
+                toolMessage.id = toolCall.id;
+              }
               // Always push the tool message
               this.messages.push(toolMessage);
               // Check for timer event
@@ -190,6 +189,15 @@ export class MiraAgent implements Agent {
                   }
                 } catch (e) { /* not JSON, ignore */ }
               }
+            } else {
+              console.log("Tried to call a tool that doesn't exist:", toolCall.name);
+              // Add a placeholder tool call message indicating the tool is unavailable
+              const unavailableToolMessage = new ToolMessage({
+                content: `Tool ${toolCall.name} unavailable`,
+                tool_call_id: toolCall.id || `unknown_${Date.now()}`,
+                status: "error"
+              });
+              this.messages.push(unavailableToolMessage);
             }
           }
         }

@@ -6,7 +6,7 @@ import axios, { AxiosError } from 'axios';
 
 /**
  * Fetches all available tools for a specified package from the cloud service.
- * 
+ *
  * @param cloudUrl - The URL of the cloud service
  * @param tpaPackageName - The name of the third-party application package
  * @returns A promise that resolves to an array of tool schemas
@@ -38,7 +38,7 @@ export function compileTool(cloudUrl: string, tpaPackageName: string, tpaTool: T
         case 'string':
           fieldSchema = z.string().describe(param.description);
           // Add enum validation if provided
-          if (param.enum) {
+          if (param.enum && param.enum.length > 0) {
             fieldSchema = z.enum(param.enum as [string, ...string[]]).describe(param.description);
           }
           break;
@@ -127,7 +127,7 @@ export function compileTool(cloudUrl: string, tpaPackageName: string, tpaTool: T
 /**
  * Gets all installed apps for a user and retrieves all tools for each app.
  * This function requires proper authentication to be set up before calling.
- * 
+ *
  * @returns A promise that resolves to an array of tools from all installed apps
  * @throws Error if authentication fails or if there are issues fetching apps/tools
  */
@@ -135,25 +135,25 @@ export async function getAllToolsForUser(cloudUrl: string, userId: string) {
   try {
     // Construct the URL to get all tools for the user
     const urlToGetUserTools = `${cloudUrl}/api/tools/users/${userId}/tools`;
-    
+
     // Make the request to get all tools for the user
     const response = await axios.get<Array<ToolSchema & { appPackageName: string }>>(urlToGetUserTools);
     const userTools = response.data;
-    
+
     // Log the tools found for the user
     console.log(`Found ${userTools.length} tools for user ${userId}`);
-    
+
     // Compile all tools from all the user's installed apps
     const tools: DynamicStructuredTool<any>[] = [];
-    
+
     for (const toolSchema of userTools) {
       console.log(`Processing tool: ${toolSchema.id} from app: ${toolSchema.appPackageName}`);
-      
+
       // Compile each tool with its associated package name
       const compiledTool = compileTool(cloudUrl, toolSchema.appPackageName, toolSchema, userId);
       tools.push(compiledTool);
     }
-    
+
     return tools;
   } catch (error) {
     // Handle errors appropriately
@@ -164,7 +164,7 @@ export async function getAllToolsForUser(cloudUrl: string, userId: string) {
     } else {
       console.error(`Error getting tools for user ${userId}: ${(error as Error).message}`);
     }
-    
+
     // Return empty array on error to prevent application crashes
     return [];
   }
