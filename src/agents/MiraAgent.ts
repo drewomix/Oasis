@@ -11,7 +11,6 @@ import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { Tool } from "langchain/tools";
 import { TpaCommandsTool } from "./tools/TpaCommandsTool";
 import { TimerTool } from "./tools/TimerTool";
-import { FetchTasksTool, CreateTaskTool } from "./tools/TaskManagementTools";
 
 interface QuestionAnswer {
     insight: string;
@@ -64,8 +63,6 @@ export class MiraAgent implements Agent {
       new SearchToolForAgents(),
       new TpaCommandsTool(cloudUrl, userId),
       new TimerTool(),
-      // new FetchTasksTool(),
-      // new CreateTaskTool()
     ];
   }
 

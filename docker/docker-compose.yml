@@ -10,7 +10,6 @@ services:
       - "8040:80"
     environment:
       - PORT=80
-      - CLOUD_HOST_NAME=cloud
       - NODE_ENV=production
     restart: unless-stopped
     healthcheck:
