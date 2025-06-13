@@ -81,16 +81,16 @@ export function compileTool(cloudUrl: string, tpaPackageName: string, tpaTool: T
         timestamp: new Date(),
         userId: actingUserId,
       }
-
+      console.log(`[toolcall] Sending request to ${tpaTool.id} with params: ${JSON.stringify(params)}`);
       try {
-        // Send the request to the TPA webhook with a 10-second timeout
+        // Send the request to the TPA webhook with a 40-second timeout
         const response = await axios.post(webhookUrl, payload, {
           headers: {
             'Content-Type': 'application/json',
           },
           timeout: 40000 // 10 second timeout for the request
         });
-
+        console.log(`[toolcall] Response from ${tpaTool.id}: ${JSON.stringify(response.data)}`);
         // Return the successful response data
         return response.data;
       } catch (error) {
@@ -98,20 +98,20 @@ export function compileTool(cloudUrl: string, tpaPackageName: string, tpaTool: T
         if (axios.isAxiosError(error)) {
           // Check if it's a timeout error
           if (error.code === 'ECONNABORTED') {
-            console.error(`TPA tool request timed out for ${tpaTool.id}`);
+            console.error(`[toolcall] TPA tool request timed out for ${tpaTool.id}`);
             return `The request to ${tpaTool.id} timed out after 10 seconds. Please try again later.`;
           }
 
           // Handle other Axios errors
-          console.error(`TPA tool request failed for ${tpaTool.id}: ${error.message}`);
-          console.error(`Status: ${error.response?.status}`);
-          console.error(`Response: ${JSON.stringify(error.response?.data)}`);
+          console.error(`[toolcall] TPA tool request failed for ${tpaTool.id}: ${error.message}`);
+          console.error(`[toolcall] Status: ${error.response?.status}`);
+          console.error(`[toolcall] Response: ${JSON.stringify(error.response?.data)}`);
 
           return `Error executing ${tpaTool.id}: ${error.message}`;
         } else {
           // Handle non-Axios errors
           const genericError = error as Error;
-          console.error(`TPA tool execution error: ${genericError.message}`);
+          console.error(`[toolcall] TPA tool execution error: ${genericError.message}`);
           return `Error executing ${tpaTool.id}: ${genericError.message || 'Unknown error'}`;
         }
       }

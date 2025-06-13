@@ -145,21 +145,21 @@ class TranscriptionManager {
 
     let timerDuration: number;
 
-    console.log("$$$$$ transcriptionData:", transcriptionData);
+    //console.log("$$$$$ transcriptionData:", transcriptionData);
     if (transcriptionData.isFinal) {
-      console.log("$$$$$ transcriptionData.isFinal:", transcriptionData.isFinal);
+      //console.log("$$$$$ transcriptionData.isFinal:", transcriptionData.isFinal);
       // Check if the final transcript ends with a wake word
       if (this.endsWithWakeWord(cleanedText)) {
         // If it ends with just a wake word, wait longer for additional query text
         console.log("$$$$$ transcriptionData.isFinal: ends with wake word");
         timerDuration = 10000;
       } else {
-        console.log("$$$$$ transcriptionData.isFinal: does not end with wake word");
+        //console.log("$$$$$ transcriptionData.isFinal: does not end with wake word");
         // Final transcript with additional content should be processed soon
         timerDuration = 1500;
       }
     } else {
-      console.log("$$$$$ transcriptionData.isFinal: not final");
+      //console.log("$$$$$ transcriptionData.isFinal: not final");
       // For non-final transcripts
       timerDuration = 3000;
     }
@@ -329,14 +329,14 @@ class TranscriptionManager {
    * Check if text ends with a wake word
    */
   private endsWithWakeWord(text: string): boolean {
-    console.log("$$$$$ text:", text);
+    //console.log("$$$$$ text:", text);
     // Remove trailing punctuation and whitespace, lowercase
     const cleanedText = text
       .toLowerCase()
       .replace(/[.,!?;:]/g, '') // remove all punctuation
       .replace(/\s+/g, ' ')     // normalize whitespace
       .trim();
-    console.log("$$$$$ cleanedText:", cleanedText);
+    //console.log("$$$$$ cleanedText:", cleanedText);
     return explicitWakeWords.some(word => {
       // Build a regex to match the wake word at the end, allowing for punctuation/whitespace
       const pattern = new RegExp(`${word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i');
@@ -464,27 +464,64 @@ class MiraServer extends TpaServer {
       }
 
       const data = await response.json();
-      // console.log("$$$$$ Location data:", JSON.stringify(data));
 
       // Extract relevant location information
       const address = data.address;
+
+      // Get timezone information
+      const timezoneResponse = await fetch(
+        `https://us1.locationiq.com/v1/timezone?key=${LOCATIONIQ_TOKEN}&lat=${lat}&lon=${lng}&format=json`
+      );
+
+      let timezoneInfo = {
+        name: 'Unknown',
+        shortName: 'Unknown',
+        fullName: 'Unknown',
+        offsetSec: 0,
+        isDst: false
+      };
+
+      if (timezoneResponse.ok) {
+        const timezoneData = await timezoneResponse.json();
+
+        if (timezoneData.timezone) {
+          timezoneInfo = {
+            name: timezoneData.timezone.name || 'Unknown',
+            shortName: timezoneData.timezone.short_name || 'Unknown',
+            fullName: timezoneData.timezone.full_name || 'Unknown',
+            offsetSec: timezoneData.timezone.offset_sec || 0,
+            isDst: !!timezoneData.timezone.now_in_dst
+          };
+        }
+      } else {
+        console.error('Failed to fetch timezone data');
+      }
+
       const locationInfo = {
         city: address.city || address.town || address.village || 'Unknown city',
         state: address.state || 'Unknown state',
-        country: address.country || 'Unknown country'
+        country: address.country || 'Unknown country',
+        timezone: timezoneInfo
       };
 
       // Update the MiraAgent with location context
       this.agentPerSession.get(sessionId)?.updateLocationContext(locationInfo);
 
-      // console.log(`User location: ${locationInfo.city}, ${locationInfo.state}, ${locationInfo.country}`);
+      console.log(`User location: ${locationInfo.city}, ${locationInfo.state}, ${locationInfo.country}, ${locationInfo.timezone.name}`);
     } catch (error) {
       console.error('Error processing location:', error);
       // Update MiraAgent with fallback location context
       this.agentPerSession.get(sessionId)?.updateLocationContext({
         city: 'Unknown',
         state: 'Unknown',
-        country: 'Unknown'
+        country: 'Unknown',
+        timezone: {
+          name: 'Unknown',
+          shortName: 'Unknown',
+          fullName: 'Unknown',
+          offsetSec: 0,
+          isDst: false
+        }
       });
     }
   }

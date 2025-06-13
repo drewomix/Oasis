@@ -11,6 +11,9 @@ import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { Tool } from "langchain/tools";
 import { TpaCommandsTool } from "./tools/TpaCommandsTool";
 import { TimerTool } from "./tools/TimerTool";
+import { ThinkingTool } from "./tools/ThinkingTool";
+import { Calculator } from "@langchain/community/tools/calculator";
+
 
 interface QuestionAnswer {
     insight: string;
@@ -23,12 +26,12 @@ You are an intelligent assistant that is running on the smart glasses of a user.
 Utilize available tools when necessary and adhere to the following guidelines:
 1. Invoke the "Search_Engine" tool for confirming facts or retrieving extra details. Use the Search_Engine tool automatically to search the web for information about the user's query whenever you don't have enough information to answer.
 2. Use any other tools at your disposal as appropriate.  Proactively call tools that could give you any information you may need.
-3. You should think out loud before you answer. Come up with a plan for how to determine the answer accurately (including tools which might help) and then execute the plan.
+3. You should think out loud before you answer. Come up with a plan for how to determine the answer accurately (including tools which might help) and then execute the plan. Use the Internal_Thinking tool to think out loud and reason about complex problems.
 4. Keep your final answer brief (fewer than 15 words).
 5. When you have enough information to answer, output your final answer on a new line prefixed by "Final Answer:" followed immediately by a concise answer:
    "Final Answer: <concise answer>"
 6. If the query is empty, nonsensical, or useless, return Final Answer: "No query provided."
-7. For context, today's date is ${new Date().toUTCString().split(' ').slice(0,4).join(' ')}.
+7. For context, the UTC time and date is ${new Date().toUTCString()}, but for anything involving dates or times, make sure to response using the user's local time zone. If a tool needs a date or time input, convert it from the user's local time to UTC before passing it to a tool. Always think at length with the Internal_Thinking tool when working with dates and times to make sure you are using the correct time zone and offset.{timezone_context}
 8. If the user's query is location-specific (e.g., weather, news, events, or anything that depends on place), always use the user's current location context to provide the most relevant answer.
 
 {location_context}
@@ -52,10 +55,24 @@ export class MiraAgent implements Agent {
     city: string;
     state: string;
     country: string;
+    timezone: {
+      name: string;
+      shortName: string;
+      fullName: string;
+      offsetSec: number;
+      isDst: boolean;
+    };
   } = {
     city: 'Unknown',
     state: 'Unknown',
-    country: 'Unknown'
+    country: 'Unknown',
+    timezone: {
+      name: 'Unknown',
+      shortName: 'Unknown',
+      fullName: 'Unknown',
+      offsetSec: 0,
+      isDst: false
+    }
   };
 
   constructor(cloudUrl: string, userId: string) {
@@ -63,16 +80,25 @@ export class MiraAgent implements Agent {
       new SearchToolForAgents(),
       new TpaCommandsTool(cloudUrl, userId),
       new TimerTool(),
+      new ThinkingTool(),
+      new Calculator(),
     ];
   }
 
   /**
-   * Updates the agent's location context
+   * Updates the agent's location context including timezone information
    */
   public updateLocationContext(locationInfo: {
     city: string;
     state: string;
     country: string;
+    timezone: {
+      name: string;
+      shortName: string;
+      fullName: string;
+      offsetSec: number;
+      isDst: boolean;
+    };
   }): void {
     this.locationContext = locationInfo;
   }
@@ -128,8 +154,12 @@ export class MiraAgent implements Agent {
       console.log("Location Context:", this.locationContext);
       // Only add location context if we have a valid city
       const locationInfo = this.locationContext.city !== 'Unknown'
-      ? `For context the User is currently in ${this.locationContext.city}, ${this.locationContext.state}, ${this.locationContext.country}.\n\n`
-      : '';
+      ? `For context the User is currently in ${this.locationContext.city}, ${this.locationContext.state}, ${this.locationContext.country}. Their timezone is ${this.locationContext.timezone.name} (${this.locationContext.timezone.shortName}).\n\n`
+        : '';
+
+      const localtimeContext = this.locationContext.timezone.name !== 'Unknown'
+        ? ` The user's local date and time is ${new Date().toLocaleString('en-US', { timeZone: this.locationContext.timezone.name })}`
+        : '';
 
       // Add notifications context if present
       let notificationsContext = '';
@@ -152,7 +182,8 @@ export class MiraAgent implements Agent {
       const systemPrompt = systemPromptBlueprint
         .replace("{tool_names}", toolNames.join("\n"))
         .replace("{location_context}", locationInfo)
-        .replace("{notifications_context}", notificationsContext);
+        .replace("{notifications_context}", notificationsContext)
+        .replace("{timezone_context}", localtimeContext);
 
       this.messages.push(new SystemMessage(systemPrompt));
       this.messages.push(new HumanMessage(query));
