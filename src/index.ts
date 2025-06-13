@@ -29,7 +29,7 @@ const explicitWakeWords = [
   "hey miara", "he miara", "hey mia", "he mia", "hey mural", "he mural",
   "hey amira", "hey myra", "he myra", "hay mira", "hai mira", "hey-mira",
   "he-mira", "heymira", "heymara", "hey mirah", "he mirah", "hey meera", "he meera",
-  "Amira", "amira", "a mira", "a mirror", "hey miller", "he miller", "hey milla", "he milla", "hey mila", "he mila", 
+  "Amira", "amira", "a mira", "a mirror", "hey miller", "he miller", "hey milla", "he milla", "hey mila", "he mila",
   "hey miwa", "he miwa", "hey mora", "he mora", "hey moira", "he moira",
   "hey miera", "he miera", "hey mura", "he mura", "hey maira", "he maira",
   "hey meara", "he meara", "hey mara", "he mara", "hey mina", "he mina",
@@ -116,7 +116,7 @@ class TranscriptionManager {
     const hasWakeWord = explicitWakeWords.some(word => cleanedText.includes(word));
 
     if (!hasWakeWord && !this.isListeningToQuery) {
-      console.log('No wake word detected');
+      //console.log('No wake word detected');
       return;
     }
 
@@ -405,8 +405,8 @@ class MiraServer extends TpaServer {
 
     // Welcome message
     // session.layouts.showReferenceCard(
-    //   "Mira AI", 
-    //   "Virtual assistant connected", 
+    //   "Mira AI",
+    //   "Virtual assistant connected",
     //   { durationMs: 3000 }
     // );
 
@@ -448,7 +448,7 @@ class MiraServer extends TpaServer {
       const { lat, lng } = locationData;
 
       // console.log(`Location data: ${JSON.stringify(locationData)}`);
-      
+
       if (!lat || !lng) {
         console.log('Invalid location data received');
         return;
@@ -465,7 +465,7 @@ class MiraServer extends TpaServer {
 
       const data = await response.json();
       // console.log("$$$$$ Location data:", JSON.stringify(data));
-      
+
       // Extract relevant location information
       const address = data.address;
       const locationInfo = {
@@ -476,7 +476,7 @@ class MiraServer extends TpaServer {
 
       // Update the MiraAgent with location context
       this.agentPerSession.get(sessionId)?.updateLocationContext(locationInfo);
-      
+
       // console.log(`User location: ${locationInfo.city}, ${locationInfo.state}, ${locationInfo.country}`);
     } catch (error) {
       console.error('Error processing location:', error);
