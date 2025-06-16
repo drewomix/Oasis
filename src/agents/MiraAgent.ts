@@ -85,8 +85,10 @@ export class MiraAgent implements Agent {
     ];
   }
 
-  /**
+    /**
    * Updates the agent's location context including timezone information
+   * Gracefully handles invalid or incomplete location data
+   * Preserves existing known values when new values are "Unknown"
    */
   public updateLocationContext(locationInfo: {
     city: string;
@@ -100,7 +102,67 @@ export class MiraAgent implements Agent {
       isDst: boolean;
     };
   }): void {
-    this.locationContext = locationInfo;
+    try {
+      // Helper function to preserve known values
+      const preserveKnownValue = (newValue: any, currentValue: any, defaultValue: any, isUnknown: (val: any) => boolean) => {
+        const safeNewValue = typeof newValue === typeof defaultValue ? newValue : defaultValue;
+
+        // If we don't have existing context, use the new value
+        if (!this.locationContext) {
+          return safeNewValue;
+        }
+
+        // If new value is not "Unknown", use it
+        if (!isUnknown(safeNewValue)) {
+          return safeNewValue;
+        }
+
+        // If new value is "Unknown" but current value is not "Unknown", keep current
+        if (isUnknown(safeNewValue) && !isUnknown(currentValue)) {
+          return currentValue;
+        }
+
+        // Otherwise use the new value (both are "Unknown" or current doesn't exist)
+        return safeNewValue;
+      };
+
+      const isStringUnknown = (val: string) => val === 'Unknown';
+      const isNumberUnknown = (val: number) => val === 0; // For offsetSec, 0 might indicate unknown
+      const isBooleanDefault = (val: boolean) => val === false; // For isDst, false is default
+
+      // Validate and sanitize location data, preserving known values
+      const safeLocationInfo = {
+        city: preserveKnownValue(locationInfo?.city, this.locationContext?.city, 'Unknown', isStringUnknown),
+        state: preserveKnownValue(locationInfo?.state, this.locationContext?.state, 'Unknown', isStringUnknown),
+        country: preserveKnownValue(locationInfo?.country, this.locationContext?.country, 'Unknown', isStringUnknown),
+        timezone: {
+          name: preserveKnownValue(locationInfo?.timezone?.name, this.locationContext?.timezone?.name, 'Unknown', isStringUnknown),
+          shortName: preserveKnownValue(locationInfo?.timezone?.shortName, this.locationContext?.timezone?.shortName, 'Unknown', isStringUnknown),
+          fullName: preserveKnownValue(locationInfo?.timezone?.fullName, this.locationContext?.timezone?.fullName, 'Unknown', isStringUnknown),
+          offsetSec: preserveKnownValue(locationInfo?.timezone?.offsetSec, this.locationContext?.timezone?.offsetSec, 0, isNumberUnknown),
+          isDst: typeof locationInfo?.timezone?.isDst === 'boolean' ? locationInfo.timezone.isDst : (this.locationContext?.timezone?.isDst || false)
+        }
+      };
+
+      this.locationContext = safeLocationInfo;
+    } catch (error) {
+      console.error('Error updating location context:', error);
+      // Keep existing context or use default if not set
+      if (!this.locationContext || this.locationContext.city === undefined) {
+        this.locationContext = {
+          city: 'Unknown',
+          state: 'Unknown',
+          country: 'Unknown',
+          timezone: {
+            name: 'Unknown',
+            shortName: 'Unknown',
+            fullName: 'Unknown',
+            offsetSec: 0,
+            isDst: false
+          }
+        };
+      }
+    }
   }
 
   /**
