@@ -30,12 +30,18 @@ export class ThinkingTool extends Tool {
       const params: ThinkingInput = JSON.parse(input);
       if (params.thought && typeof params.thought === 'string') {
         thought = params.thought.trim();
-      } else {
+      } else if (typeof input === 'string') {
         thought = input.trim();
+      } else {
+        return 'No thought provided. Please provide some content to think about.';
       }
     } catch (e) {
       // If not valid JSON, treat the entire input as the thought
-      thought = input.trim();
+      if (typeof input === 'string') {
+        thought = input.trim();
+      } else {
+        return 'No thought provided. Please provide some content to think about.';
+      }
     }
 
     if (!thought) {
