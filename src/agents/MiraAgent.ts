@@ -8,8 +8,8 @@ import { LLMProvider } from "../utils";
 import { wrapText } from "../utils";
 import { AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
-import { Tool } from "langchain/tools";
-import { TpaCommandsTool } from "./tools/TpaCommandsTool";
+import { Tool, StructuredTool } from "langchain/tools";
+import { TpaCommandsTool, TpaListAppsTool } from "./tools/TpaCommandsTool";
 import { TimerTool } from "./tools/TimerTool";
 import { ThinkingTool } from "./tools/ThinkingTool";
 import { Calculator } from "@langchain/community/tools/calculator";
@@ -47,7 +47,7 @@ export class MiraAgent implements Agent {
   public agentDescription =
     "Answers user queries from smart glasses using conversation context and history.";
   public agentPrompt = systemPromptBlueprint;
-  public agentTools:Tool[];
+  public agentTools:(Tool | StructuredTool)[];
 
   public messages: BaseMessage[] = [];
 
@@ -78,6 +78,7 @@ export class MiraAgent implements Agent {
   constructor(cloudUrl: string, userId: string) {
     this.agentTools = [
       new SearchToolForAgents(),
+      new TpaListAppsTool(cloudUrl, userId),
       new TpaCommandsTool(cloudUrl, userId),
       new TimerTool(),
       new ThinkingTool(),
@@ -251,9 +252,12 @@ export class MiraAgent implements Agent {
       this.messages.push(new HumanMessage(query));
 
       while (turns < 5) {
+        // console.log("MiraAgent Messages:", this.messages);
         // Invoke the chain with the query
         const result: AIMessage = await llm.invoke(this.messages);
         this.messages.push(result);
+
+        console.log("MiraAgent Result:", result);
 
         const output: string = result.content.toString();
 
@@ -261,23 +265,73 @@ export class MiraAgent implements Agent {
           for (const toolCall of result.tool_calls) {
             const selectedTool = this.agentTools.find(tool => tool.name === toolCall.name);
             if (selectedTool) {
-              const toolMessage: ToolMessage = await selectedTool.invoke(toolCall);
-              if (toolMessage.content == "" || toolMessage.content == null) {
-                toolMessage.content = "Tool executed successfully but did not return any information.";
+              // Handle DynamicStructuredTool vs regular Tool differently
+              let toolInput: any;
+              if (selectedTool instanceof StructuredTool) {
+                // For StructuredTool, pass the raw args object
+                toolInput = toolCall.args;
+              } else {
+                // For regular Tool, convert to JSON string
+                toolInput = JSON.stringify(toolCall.args);
               }
-              if (toolMessage.id == null) {
-                toolMessage.id = toolCall.id;
+              
+              console.log(`[MiraAgent] Calling tool ${toolCall.name} with input:`, toolInput);
+              let toolResult: any;
+              try {
+                toolResult = await selectedTool.invoke(toolInput, {
+                  configurable: { runId: toolCall.id }
+                });
+              } catch (error) {
+                console.error(`[MiraAgent] Error invoking tool ${toolCall.name}:`, error);
+                toolResult = `Error executing tool: ${error}`;
+              }
+              
+              // Handle different return types from tools
+              let toolMessage: ToolMessage;
+              if (toolResult instanceof ToolMessage) {
+                toolMessage = toolResult;
+              } else {
+                // If the tool returned a string or other type, create a ToolMessage
+                const content = typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult);
+                toolMessage = new ToolMessage({
+                  content: content,
+                  tool_call_id: toolCall.id || `fallback_${Date.now()}`,
+                  name: toolCall.name
+                });
+              }
+              
+              // console.log(`[MiraAgent] Tool ${toolCall.name} returned:`, toolMessage.content);
+              // console.log(`[MiraAgent] Tool message ID:`, toolMessage.id);
+              // console.log(`[MiraAgent] Tool message content length:`, toolMessage.content?.length || 0);
+              
+              // Create a new ToolMessage if we need to modify content or id
+              if (toolMessage.content == "" || toolMessage.content == null || toolMessage.id == null) {
+                console.log(`[MiraAgent] Creating fallback tool message for ${toolCall.name}`);
+                toolMessage = new ToolMessage({
+                  content: toolMessage.content || "Tool executed successfully but did not return any information.",
+                  tool_call_id: toolMessage.id || toolCall.id || `fallback_${Date.now()}`,
+                  name: toolCall.name
+                });
               }
               // Always push the tool message
               this.messages.push(toolMessage);
-              // Check for timer event
-              if (typeof toolMessage.content === 'string') {
-                try {
-                  const parsed = JSON.parse(toolMessage.content);
-                  if (parsed && parsed.event === 'timer_set' && parsed.duration) {
-                    return toolMessage.content; // Return timer event JSON directly
+              console.log(`[MiraAgent] Added tool message to conversation. Total messages:`, this.messages.length);
+              const contentStr = typeof toolMessage.content === 'string' ? toolMessage.content : JSON.stringify(toolMessage.content);
+              console.log(`[MiraAgent] Last tool message content preview:`, contentStr.substring(0, 200) + (contentStr.length > 200 ? '...' : ''));
+              // Check for timer event - only from Timer tool
+              if (toolCall.name === 'Timer' && typeof toolMessage.content === 'string') {
+                const content = toolMessage.content.trim();
+                // Only try to parse as JSON if it starts with { or [ (looks like JSON)
+                if (content.startsWith('{') || content.startsWith('[')) {
+                  try {
+                    const parsed = JSON.parse(content);
+                    if (parsed && parsed.event === 'timer_set' && parsed.duration) {
+                      return toolMessage.content; // Return timer event JSON directly
+                    }
+                  } catch (e) {
+                    console.log("Error parsing Timer tool JSON response:", e);
                   }
-                } catch (e) { /* not JSON, ignore */ }
+                }
               }
             } else {
               console.log("Tried to call a tool that doesn't exist:", toolCall.name);
