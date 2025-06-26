@@ -190,8 +190,55 @@ class TranscriptionManager {
 
     // Use the calculated duration in the backend URL
     const backendUrl = `${this.serverUrl}/api/transcripts/${this.sessionId}?duration=${durationSeconds}`;
-    const transcriptResponse = await fetch(backendUrl);
-    const transcriptionResponse = await transcriptResponse.json();
+    
+    let transcriptResponse: Response;
+    let transcriptionResponse: any;
+    
+    try {
+      console.log(`[Session ${this.sessionId}]: Fetching transcript from: ${backendUrl}`);
+      transcriptResponse = await fetch(backendUrl);
+      
+      console.log(`[Session ${this.sessionId}]: Response status: ${transcriptResponse.status}`);
+      console.log(`[Session ${this.sessionId}]: Response headers:`, Object.fromEntries(transcriptResponse.headers.entries()));
+      
+      if (!transcriptResponse.ok) {
+        throw new Error(`HTTP ${transcriptResponse.status}: ${transcriptResponse.statusText}`);
+      }
+      
+      const responseText = await transcriptResponse.text();
+      console.log(`[Session ${this.sessionId}]: Raw response body:`, responseText);
+      
+      if (!responseText || responseText.trim() === '') {
+        throw new Error('Empty response body received');
+      }
+      
+      try {
+        transcriptionResponse = JSON.parse(responseText);
+      } catch (jsonError) {
+        console.error(`[Session ${this.sessionId}]: JSON parsing failed:`, jsonError);
+        console.error(`[Session ${this.sessionId}]: Response text that failed to parse:`, responseText);
+        throw new Error(`Failed to parse JSON response: ${jsonError.message}`);
+      }
+      
+      console.log(`[Session ${this.sessionId}]: Parsed response:`, JSON.stringify(transcriptionResponse, null, 2));
+      
+    } catch (fetchError) {
+      console.error(`[Session ${this.sessionId}]: Error fetching transcript:`, fetchError);
+      this.session.layouts.showTextWall(
+        wrapText("Sorry, there was an error retrieving your transcript. Please try again.", 30),
+        { durationMs: 5000 }
+      );
+      return;
+    }
+
+    if (!transcriptionResponse || !transcriptionResponse.segments || !Array.isArray(transcriptionResponse.segments)) {
+      console.error(`[Session ${this.sessionId}]: Invalid response structure:`, transcriptionResponse);
+      this.session.layouts.showTextWall(
+        wrapText("Sorry, the transcript format was invalid. Please try again.", 30),
+        { durationMs: 5000 }
+      );
+      return;
+    }
 
     const rawCombinedText = transcriptionResponse.segments.map((segment: any) => segment.text).join(' ');
 
