@@ -412,7 +412,7 @@ function getCleanServerUrl(rawUrl: string | undefined): string {
   // Remove ws:// or wss://
   let url = rawUrl.replace(/^wss?:\/\//, '');
   // Remove trailing /tpa-ws
-  url = url.replace(/\/tpa-ws$/, '');
+  url = url.replace(/\/app-ws$/, '');
   // Prepend https://
   return `https://${url}`;
 }
