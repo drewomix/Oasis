@@ -1,8 +1,8 @@
 import path from 'path';
 import {
-  TpaSession,
-  TpaServer
-} from '@augmentos/sdk';
+  AppSession,
+  AppServer, PhotoData
+} from '@mentra/sdk';
 import { MiraAgent } from './agents';
 import { wrapText, TranscriptProcessor } from './utils';
 import { getAllToolsForUser } from './agents/tools/TpaTool';
@@ -77,7 +77,7 @@ class TranscriptionManager {
   private isProcessingQuery: boolean = false;
   private isListeningToQuery: boolean = false;
   private timeoutId?: NodeJS.Timeout;
-  private session: TpaSession;
+  private session: AppSession;
   private sessionId: string;
   private userId: string;
   private miraAgent: MiraAgent;
@@ -85,8 +85,9 @@ class TranscriptionManager {
   private activeTimers: Map<string, NodeJS.Timeout> = new Map(); // timerId -> timeoutId
   private serverUrl: string;
   private transcriptProcessor: TranscriptProcessor;
+  private activePhotos: Map<string, {promise: Promise<PhotoData>, photoData: PhotoData | null, lastPhotoTime: number}> = new Map();
 
-  constructor(session: TpaSession, sessionId: string, userId: string, miraAgent: MiraAgent, serverUrl: string) {
+  constructor(session: AppSession, sessionId: string, userId: string, miraAgent: MiraAgent, serverUrl: string) {
     this.session = session;
     this.sessionId = sessionId;
     this.userId = userId;
@@ -118,6 +119,39 @@ class TranscriptionManager {
     if (!hasWakeWord && !this.isListeningToQuery) {
       //console.log('No wake word detected');
       return;
+    }
+
+    if (this.activePhotos.has(this.sessionId)) {
+      const photo = this.activePhotos.get(this.sessionId);
+      if (photo) {
+        if (photo.lastPhotoTime + 5000 < Date.now()) {
+          this.activePhotos.delete(this.sessionId);
+        }
+      }
+    }
+    if (!this.activePhotos.has(this.sessionId)) {
+      // play new sound effect
+      if (!this.session.capabilities?.hasScreen) {
+        this.session.audio.playAudio({audioUrl: "https://okgodoit.com/start.mp3"});
+      }
+
+      const getPhotoPromise = this.session.camera.requestPhoto();
+      getPhotoPromise.then(photoData => {
+        this.activePhotos.set(this.sessionId, {
+          promise: getPhotoPromise,
+          photoData: photoData,
+          lastPhotoTime: Date.now()
+        });
+      });
+      this.activePhotos.set(this.sessionId, {
+        promise: getPhotoPromise,
+        photoData: null,
+        lastPhotoTime: Date.now()
+      });
+      getPhotoPromise.catch(error => {
+        console.error(`[Session ${this.sessionId}]: Error getting photo:`, error);
+        this.activePhotos.delete(this.sessionId);
+      });
     }
 
     this.isListeningToQuery = true;
@@ -175,6 +209,18 @@ class TranscriptionManager {
     }, timerDuration);
   }
 
+  private async getPhoto(): Promise<PhotoData | null> {
+    if (this.activePhotos.has(this.sessionId)) {
+      const photo = this.activePhotos.get(this.sessionId);
+      if (photo && photo.photoData) {
+        return photo.photoData;
+      } else if (photo && photo.promise) {
+        return await photo.promise;
+      }
+    }
+    return null;
+  }
+
   /**
    * Process and respond to the user's query
    */
@@ -190,28 +236,28 @@ class TranscriptionManager {
 
     // Use the calculated duration in the backend URL
     const backendUrl = `${this.serverUrl}/api/transcripts/${this.sessionId}?duration=${durationSeconds}`;
-    
+
     let transcriptResponse: Response;
     let transcriptionResponse: any;
-    
+
     try {
       console.log(`[Session ${this.sessionId}]: Fetching transcript from: ${backendUrl}`);
       transcriptResponse = await fetch(backendUrl);
-      
+
       console.log(`[Session ${this.sessionId}]: Response status: ${transcriptResponse.status}`);
       console.log(`[Session ${this.sessionId}]: Response headers:`, Object.fromEntries(transcriptResponse.headers.entries()));
-      
+
       if (!transcriptResponse.ok) {
         throw new Error(`HTTP ${transcriptResponse.status}: ${transcriptResponse.statusText}`);
       }
-      
+
       const responseText = await transcriptResponse.text();
       console.log(`[Session ${this.sessionId}]: Raw response body:`, responseText);
-      
+
       if (!responseText || responseText.trim() === '') {
         throw new Error('Empty response body received');
       }
-      
+
       try {
         transcriptionResponse = JSON.parse(responseText);
       } catch (jsonError) {
@@ -219,9 +265,9 @@ class TranscriptionManager {
         console.error(`[Session ${this.sessionId}]: Response text that failed to parse:`, responseText);
         throw new Error(`Failed to parse JSON response: ${jsonError.message}`);
       }
-      
+
       console.log(`[Session ${this.sessionId}]: Parsed response:`, JSON.stringify(transcriptionResponse, null, 2));
-      
+
     } catch (fetchError) {
       console.error(`[Session ${this.sessionId}]: Error fetching transcript:`, fetchError);
       this.session.layouts.showTextWall(
@@ -249,6 +295,10 @@ class TranscriptionManager {
 
     this.isProcessingQuery = true;
 
+    if (!this.session.capabilities?.hasScreen) {
+      this.session.audio.playAudio({audioUrl: "https://okgodoit.com/popping.mp3"});
+    }
+
     try {
       // Remove wake word from query
       const query = this.removeWakeWord(rawCombinedText);
@@ -272,15 +322,12 @@ class TranscriptionManager {
       );
 
       // Process the query with the Mira agent
-      const inputData = { query };
+      const inputData = { query, photo: await this.getPhoto() };
       const agentResponse = await this.miraAgent.handleContext(inputData);
 
       if (!agentResponse) {
         console.log("No insight found");
-        this.session.layouts.showTextWall(
-          wrapText("Sorry, I couldn't find an answer to that.", 30),
-          { durationMs: 5000 }
-        );
+        this.showOrSpeakText("Sorry, I couldn't find an answer to that.");
       } else {
         let handled = false;
         if (typeof agentResponse === 'string') {
@@ -293,15 +340,9 @@ class TranscriptionManager {
                 case 'timer_set':
                   if (parsed.duration) {
                     const labelText = parsed.label ? ` for "${parsed.label}"` : '';
-                    this.session.layouts.showTextWall(
-                      wrapText(`Timer set${labelText} for ${parsed.duration} seconds.`, 30),
-                      { durationMs: 5000 }
-                    );
+                    this.showOrSpeakText(`Timer set${labelText} for ${parsed.duration} seconds.`);
                     const timeout = setTimeout(() => {
-                      this.session.layouts.showTextWall(
-                        wrapText(`Timer${labelText} is up!`, 30),
-                        { durationMs: 8000 }
-                      );
+                      this.showOrSpeakText(`Timer${labelText} is up!`);
                       this.activeTimers.delete(parsed.timerId);
                     }, parsed.duration * 1000);
                     this.activeTimers.set(parsed.timerId, timeout);
@@ -322,18 +363,12 @@ class TranscriptionManager {
         }
 
         if (!handled) {
-          this.session.layouts.showTextWall(
-            wrapText(agentResponse, 30),
-            { durationMs: 8000 }
-          );
+          this.showOrSpeakText(agentResponse);
         }
       }
     } catch (error) {
       console.error(`[Session ${this.sessionId}]: Error processing query:`, error);
-      this.session.layouts.showTextWall(
-        wrapText("Sorry, there was an error processing your request.", 30),
-        { durationMs: 5000 }
-      );
+      this.showOrSpeakText("Sorry, there was an error processing your request.");
     } finally {
       // Reset the state for future queries
       this.transcriptionStartTime = 0;
@@ -352,6 +387,13 @@ class TranscriptionManager {
       setTimeout(() => {
         this.isProcessingQuery = false;
       }, 2000);
+    }
+  }
+
+  private async showOrSpeakText(text: string): Promise<void> {
+    this.session.layouts.showTextWall(wrapText(text, 30), { durationMs: 5000 });
+    if (!this.session.capabilities?.hasScreen) {
+      this.session.audio.speak(text);
     }
   }
 
@@ -420,14 +462,14 @@ function getCleanServerUrl(rawUrl: string | undefined): string {
 /**
  * Main Mira TPA server class
  */
-class MiraServer extends TpaServer {
+class MiraServer extends AppServer {
   private transcriptionManagers = new Map<string, TranscriptionManager>();
   private agentPerSession = new Map<string, MiraAgent>();
 
   /**
    * Handle new session connections
    */
-  protected async onSession(session: TpaSession, sessionId: string, userId: string): Promise<void> {
+  protected async onSession(session: AppSession, sessionId: string, userId: string): Promise<void> {
     console.log(`Setting up Mira service for session ${sessionId}, user ${userId}`);
 
     const cleanServerUrl = getCleanServerUrl(session.getServerUrl());

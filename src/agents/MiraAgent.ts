@@ -13,6 +13,7 @@ import { TpaCommandsTool, TpaListAppsTool } from "./tools/TpaCommandsTool";
 import { TimerTool } from "./tools/TimerTool";
 import { ThinkingTool } from "./tools/ThinkingTool";
 import { Calculator } from "@langchain/community/tools/calculator";
+import { PhotoData } from "@mentra/sdk";
 
 
 interface QuestionAnswer {
@@ -36,6 +37,7 @@ Utilize available tools when necessary and adhere to the following guidelines:
 
 {location_context}
 {notifications_context}
+{photo_context}
 Tools:
 {tool_names}
 
@@ -205,6 +207,7 @@ export class MiraAgent implements Agent {
       const transcriptHistory = userContext.transcript_history || "";
       const insightHistory = userContext.insight_history || "";
       const query = userContext.query || "";
+      const photo = userContext.photo as PhotoData | null;
 
       let turns = 0;
 
@@ -238,6 +241,8 @@ export class MiraAgent implements Agent {
         notificationsContext = `Recent notifications:\n${notifs}\n\n`;
       }
 
+      const photoContext = photo ? `The attached photo is what the user can currently see.  It may or may not be relevant to the query.  If it is relevant, use it to answer the query.` : '';
+
       const llm = LLMProvider.getLLM().bindTools(this.agentTools);
       const toolNames = this.agentTools.map((tool) => tool.name+": "+tool.description || "");
 
@@ -246,10 +251,31 @@ export class MiraAgent implements Agent {
         .replace("{tool_names}", toolNames.join("\n"))
         .replace("{location_context}", locationInfo)
         .replace("{notifications_context}", notificationsContext)
-        .replace("{timezone_context}", localtimeContext);
+        .replace("{timezone_context}", localtimeContext)
+        .replace("{photo_context}", photoContext);
 
       this.messages.push(new SystemMessage(systemPrompt));
-      this.messages.push(new HumanMessage(query));
+      const photoAsBase64 = photo ? `data:image/jpeg;base64,${photo.buffer.toString('base64')}` : null;
+
+      // Create human message with optional image
+      if (photoAsBase64) {
+        this.messages.push(new HumanMessage({
+          content: [
+            {
+              type: "text",
+              text: query,
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: photoAsBase64,
+              },
+            },
+          ],
+        }));
+      } else {
+        this.messages.push(new HumanMessage(query));
+      }
 
       while (turns < 5) {
         // console.log("MiraAgent Messages:", this.messages);
@@ -274,7 +300,7 @@ export class MiraAgent implements Agent {
                 // For regular Tool, convert to JSON string
                 toolInput = JSON.stringify(toolCall.args);
               }
-              
+
               console.log(`[MiraAgent] Calling tool ${toolCall.name} with input:`, toolInput);
               let toolResult: any;
               try {
@@ -285,7 +311,7 @@ export class MiraAgent implements Agent {
                 console.error(`[MiraAgent] Error invoking tool ${toolCall.name}:`, error);
                 toolResult = `Error executing tool: ${error}`;
               }
-              
+
               // Handle different return types from tools
               let toolMessage: ToolMessage;
               if (toolResult instanceof ToolMessage) {
@@ -299,11 +325,11 @@ export class MiraAgent implements Agent {
                   name: toolCall.name
                 });
               }
-              
+
               // console.log(`[MiraAgent] Tool ${toolCall.name} returned:`, toolMessage.content);
               // console.log(`[MiraAgent] Tool message ID:`, toolMessage.id);
               // console.log(`[MiraAgent] Tool message content length:`, toolMessage.content?.length || 0);
-              
+
               // Create a new ToolMessage if we need to modify content or id
               if (toolMessage.content == "" || toolMessage.content == null || toolMessage.id == null) {
                 console.log(`[MiraAgent] Creating fallback tool message for ${toolCall.name}`);
