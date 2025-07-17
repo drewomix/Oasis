@@ -77,6 +77,7 @@ class TranscriptionManager {
   private isProcessingQuery: boolean = false;
   private isListeningToQuery: boolean = false;
   private timeoutId?: NodeJS.Timeout;
+  private maxListeningTimeoutId?: NodeJS.Timeout; // 15-second hard cutoff timer
   private session: AppSession;
   private sessionId: string;
   private userId: string;
@@ -167,6 +168,16 @@ class TranscriptionManager {
           this.handleLocation(location);
         }
       });
+
+      // Start 15-second maximum listening timer
+      this.maxListeningTimeoutId = setTimeout(() => {
+        console.log(`[Session ${this.sessionId}]: Maximum listening time (15s) reached, forcing query processing`);
+        if (this.timeoutId) {
+          clearTimeout(this.timeoutId);
+          this.timeoutId = undefined;
+        }
+        this.processQuery(text, 15000);
+      }, 15000);
     }
 
     this.isListeningToQuery = true;
@@ -501,6 +512,12 @@ class TranscriptionManager {
         this.timeoutId = undefined;
       }
 
+      // Clear the maximum listening timer
+      if (this.maxListeningTimeoutId) {
+        clearTimeout(this.maxListeningTimeoutId);
+        this.maxListeningTimeoutId = undefined;
+      }
+
       // Reset listening state
       this.isListeningToQuery = false;
 
@@ -517,7 +534,14 @@ class TranscriptionManager {
   private async showOrSpeakText(text: string): Promise<void> {
     this.session.layouts.showTextWall(wrapText(text, 30), { durationMs: 5000 });
     if (!this.session.capabilities?.hasScreen) {
-      this.session.audio.speak(text);
+      try {
+        const result = await this.session.audio.speak(text);
+        if (result.error) {
+          console.error(`[Session ${this.sessionId}]: Error speaking text:`, result.error);
+        }
+      } catch (error) {
+        console.error(`[Session ${this.sessionId}]: Error speaking text:`, error);
+      }
     }
   }
 
@@ -563,6 +587,10 @@ class TranscriptionManager {
   cleanup(): void {
     if (this.timeoutId) {
       clearTimeout(this.timeoutId);
+    }
+    // Clear the maximum listening timer
+    if (this.maxListeningTimeoutId) {
+      clearTimeout(this.maxListeningTimeoutId);
     }
     // Clear all active timers
     for (const timeout of this.activeTimers.values()) {
