@@ -135,23 +135,30 @@ class TranscriptionManager {
         this.session.audio.playAudio({audioUrl: "https://okgodoit.com/start.mp3"});
       }
 
-      const getPhotoPromise = this.session.camera.requestPhoto();
-      getPhotoPromise.then(photoData => {
+      if (this.session.capabilities?.hasCamera) {
+        const getPhotoPromise = this.session.camera.requestPhoto();
+        getPhotoPromise.then(photoData => {
+          this.activePhotos.set(this.sessionId, {
+            promise: getPhotoPromise,
+            photoData: photoData,
+            lastPhotoTime: Date.now()
+          });
+          setTimeout(() => {
+            if (this.activePhotos.has(this.sessionId) && this.activePhotos.get(this.sessionId)?.promise == getPhotoPromise) {
+              this.activePhotos.delete(this.sessionId);
+            }
+          }, 10000);
+        });
         this.activePhotos.set(this.sessionId, {
           promise: getPhotoPromise,
-          photoData: photoData,
+          photoData: null,
           lastPhotoTime: Date.now()
         });
-      });
-      this.activePhotos.set(this.sessionId, {
-        promise: getPhotoPromise,
-        photoData: null,
-        lastPhotoTime: Date.now()
-      });
-      getPhotoPromise.catch(error => {
-        console.error(`[Session ${this.sessionId}]: Error getting photo:`, error);
-        this.activePhotos.delete(this.sessionId);
-      });
+        getPhotoPromise.catch(error => {
+          console.error(`[Session ${this.sessionId}]: Error getting photo:`, error);
+          this.activePhotos.delete(this.sessionId);
+        });
+      }
     }
 
     this.isListeningToQuery = true;
@@ -214,8 +221,8 @@ class TranscriptionManager {
       const photo = this.activePhotos.get(this.sessionId);
       if (photo && photo.photoData) {
         return photo.photoData;
-      } else if (photo && photo.promise) {
-        return await photo.promise;
+      } else {
+        return null;
       }
     }
     return null;
