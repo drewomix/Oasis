@@ -1,10 +1,21 @@
-import { Tool } from '@langchain/core/tools';
+import { StructuredTool } from '@langchain/core/tools';
 import { randomUUID } from 'crypto';
+import { z } from 'zod';
 
-interface TimerInput {
-  duration: number; // in seconds
-}
+// Define the input schema using zod
+const TimerInputSchema = z.object({
+  duration: z.number().positive().describe('Duration in seconds (must be a positive number)'),
+  label: z.string().optional().describe('Optional name or label for the timer'),
+});
 
+// Type for the timer input based on the schema
+type TimerInput = z.infer<typeof TimerInputSchema>;
+
+/**
+ * Parses duration from natural language text (helper function for backward compatibility)
+ * @param text - Natural language text containing duration
+ * @returns Parsed duration object
+ */
 function parseDurationFromText(text: string): { duration: number | null } {
   // Match patterns like '30 seconds', '2 minutes', '1 min', '45s', '10m', etc.
   const regex = /([0-9]+)\s*(seconds?|secs?|s|minutes?|mins?|m)/i;
@@ -22,31 +33,49 @@ function parseDurationFromText(text: string): { duration: number | null } {
 }
 
 /**
- * TimerTool allows the agent to set a timer for a specified duration.
- * Input: { "duration": number (seconds) }
- * Output: Returns a JSON string: { event: "timer_set", duration, timerId }
+ * TimerTool allows the agent to set a timer for a specified duration with an optional label.
+ * Input: { "duration": number (seconds), "label"?: string (optional name) }
+ * Output: Returns a JSON string: { event: "timer_set", duration, timerId, label? }
  */
-export class TimerTool extends Tool {
+export class TimerTool extends StructuredTool {
   name = 'Timer';
-  description = 'Sets a timer for a specified duration in seconds or minutes. Input: { "duration": number (seconds) }. Use this tool when a user asks to set a timer or alarm.';
+  description = 'Sets a timer for a specified duration in seconds with an optional label. Input: { "duration": number (seconds), "label"?: string (optional name) }. Use this tool when a user asks to set a timer or alarm.';
+  schema = TimerInputSchema;
 
-  async _call(input: string): Promise<string> {
-    let params: TimerInput | null = null;
-    // Try JSON first
-    try {
-      params = JSON.parse(input);
-    } catch (e) {
-      // Not JSON, try to parse natural language
-      const parsed = parseDurationFromText(input);
-      if (parsed.duration) {
-        params = { duration: parsed.duration };
-      }
+  /**
+   * Sets a timer for a specified duration in seconds with an optional label.
+   * @param input - Object with duration property (number of seconds) and optional label
+   * @returns JSON string with timer_set event, duration, timerId, and optional label
+   */
+  async _call(input: TimerInput): Promise<string> {
+    const { duration, label } = input;
+
+    // Validate that duration is a positive number
+    if (!duration || typeof duration !== 'number' || duration <= 0) {
+      return JSON.stringify({
+        error: 'Invalid input. Duration must be a positive number in seconds.'
+      });
     }
-    if (!params || !params.duration || typeof params.duration !== 'number' || params.duration <= 0) {
-      return JSON.stringify({ error: 'Invalid input. Please specify a duration (e.g., "30 seconds" or { "duration": 30 }).' });
-    }
-    const { duration } = params;
+
     const timerId = randomUUID();
-    return JSON.stringify({ event: 'timer_set', duration, timerId });
+
+    // Build the response object
+    const response: {
+      event: string;
+      duration: number;
+      timerId: string;
+      label?: string;
+    } = {
+      event: 'timer_set',
+      duration,
+      timerId
+    };
+
+    // Include label if provided
+    if (label && label.trim() !== '') {
+      response.label = label.trim();
+    }
+
+    return JSON.stringify(response);
   }
-} 
+}

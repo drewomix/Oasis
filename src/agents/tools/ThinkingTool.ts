@@ -1,8 +1,13 @@
-import { Tool } from '@langchain/core/tools';
+import { StructuredTool } from '@langchain/core/tools';
+import { z } from 'zod';
 
-interface ThinkingInput {
-  thought: string;
-}
+// Define the input schema using zod
+const ThinkingInputSchema = z.object({
+  thought: z.string().min(1).describe('The thought, reasoning step, or internal memo to process'),
+});
+
+// Type for the thinking input based on the schema
+type ThinkingInput = z.infer<typeof ThinkingInputSchema>;
 
 /**
  * ThinkingTool allows the agent to organize its internal thought process
@@ -10,49 +15,34 @@ interface ThinkingInput {
  * This tool helps the agent structure its thinking and maintain context
  * during complex reasoning tasks.
  *
- * Input: { "thought": string } or a plain string with the thought content
+ * Input: { "thought": string }
  * Output: Returns a confirmation that the thought was processed
  */
-export class ThinkingTool extends Tool {
+export class ThinkingTool extends StructuredTool {
   name = 'Internal_Thinking';
-  description = 'Allows the agent to write out internal thoughts, reasoning steps, or memos to self. Use this tool to organize your thinking process, note important considerations, or structure your approach to complex problems. Input: { "thought": string } or plain text with your thoughts.';
+  description = 'Allows the agent to write out internal thoughts, reasoning steps, or memos to self. Use this tool to organize your thinking process, note important considerations, or structure your approach to complex problems. Input: { "thought": string } with your thoughts.';
+  schema = ThinkingInputSchema;
 
   /**
    * Processes the agent's internal thoughts and provides confirmation
-   * @param input - JSON string with thought property or plain text thought
+   * @param input - Object with thought property (string)
    * @returns Promise<string> - Confirmation message
    */
-  async _call(input: string): Promise<string> {
-    let thought: string;
+  async _call(input: ThinkingInput): Promise<string> {
+    const { thought } = input;
 
-    try {
-      // Try to parse as JSON first
-      const params: ThinkingInput = JSON.parse(input);
-      if (params.thought && typeof params.thought === 'string') {
-        thought = params.thought.trim();
-      } else if (typeof input === 'string') {
-        thought = input.trim();
-      } else {
-        return 'No thought provided. Please provide some content to think about.';
-      }
-    } catch (e) {
-      // If not valid JSON, treat the entire input as the thought
-      if (typeof input === 'string') {
-        thought = input.trim();
-      } else {
-        return 'No thought provided. Please provide some content to think about.';
-      }
-    }
-
-    if (!thought) {
+    // Validate that thought is not empty
+    if (!thought || thought.trim() === '') {
       return 'No thought provided. Please provide some content to think about.';
     }
 
+    const trimmedThought = thought.trim();
+
     // Log the thought for debugging purposes (optional)
-    console.log(`[ThinkingTool] Agent thought: ${thought}`);
+    console.log(`[ThinkingTool] Agent thought: ${trimmedThought}`);
 
     // Return a confirmation that acknowledges the thought was processed
     // This helps the agent know the tool executed successfully
-    return `Thought processed: "${thought}"\nContinuing with reasoning...`;
+    return `Thought processed: "${trimmedThought}"\nContinuing with reasoning...`;
   }
 }
