@@ -130,11 +130,6 @@ class TranscriptionManager {
       }
     }
     if (!this.activePhotos.has(this.sessionId)) {
-      // play new sound effect
-      if (!this.session.capabilities?.hasScreen) {
-        this.session.audio.playAudio({audioUrl: "https://okgodoit.com/start.mp3"});
-      }
-
       if (this.session.capabilities?.hasCamera) {
         const getPhotoPromise = this.session.camera.requestPhoto();
         getPhotoPromise.then(photoData => {
@@ -159,6 +154,19 @@ class TranscriptionManager {
           this.activePhotos.delete(this.sessionId);
         });
       }
+    }
+
+
+    if (!this.isListeningToQuery) {
+      // play new sound effect
+      if (!this.session.capabilities?.hasScreen) {
+        this.session.audio.playAudio({audioUrl: "https://okgodoit.com/start.mp3"});
+      }
+      this.session.location.getLatestLocation({accuracy: "realtime"}).then(location => {
+        if (location) {
+          this.handleLocation(location);
+        }
+      });
     }
 
     this.isListeningToQuery = true;
@@ -226,6 +234,98 @@ class TranscriptionManager {
       }
     }
     return null;
+  }
+
+   /**
+   * Handles location updates with robust error handling
+   * Gracefully falls back to default values if location services fail
+   */
+   public async handleLocation(locationData: any): Promise<void> {
+    console.log("$$$$$ Location data:", JSON.stringify(locationData));
+    // Default fallback location context
+    const fallbackLocationContext = {
+      city: 'Unknown',
+      state: 'Unknown',
+      country: 'Unknown',
+      timezone: {
+        name: 'Unknown',
+        shortName: 'Unknown',
+        fullName: 'Unknown',
+        offsetSec: 0,
+        isDst: false
+      }
+    };
+
+    try {
+      // console.log("$$$$$ Location data:", JSON.stringify(locationData));
+      const { lat, lng } = locationData;
+
+      // console.log(`Location data: ${JSON.stringify(locationData)}`);
+
+      if (!lat || !lng) {
+        console.log('Invalid location data received, using fallback');
+        this.miraAgent.updateLocationContext(fallbackLocationContext);
+        return;
+      }
+
+      let locationInfo = { ...fallbackLocationContext };
+
+      try {
+        // Use LocationIQ for reverse geocoding
+        const response = await fetch(
+          `https://us1.locationiq.com/v1/reverse.php?key=${LOCATIONIQ_TOKEN}&lat=${lat}&lon=${lng}&format=json`
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          const address = data.address;
+
+          if (address) {
+            locationInfo.city = address.city || address.town || address.village || 'Unknown city';
+            locationInfo.state = address.state || 'Unknown state';
+            locationInfo.country = address.country || 'Unknown country';
+          }
+        } else {
+          console.warn(`LocationIQ reverse geocoding failed with status: ${response.status}`);
+        }
+      } catch (geocodingError) {
+        console.warn('Reverse geocoding failed:', geocodingError);
+      }
+
+      try {
+        // Get timezone information
+        const timezoneResponse = await fetch(
+          `https://us1.locationiq.com/v1/timezone?key=${LOCATIONIQ_TOKEN}&lat=${lat}&lon=${lng}&format=json`
+        );
+
+        if (timezoneResponse.ok) {
+          const timezoneData = await timezoneResponse.json();
+
+          if (timezoneData.timezone) {
+            locationInfo.timezone = {
+              name: timezoneData.timezone.name || 'Unknown',
+              shortName: timezoneData.timezone.short_name || 'Unknown',
+              fullName: timezoneData.timezone.full_name || 'Unknown',
+              offsetSec: timezoneData.timezone.offset_sec || 0,
+              isDst: !!timezoneData.timezone.now_in_dst
+            };
+          }
+        } else {
+          console.warn(`LocationIQ timezone API failed with status: ${timezoneResponse.status}`);
+        }
+      } catch (timezoneError) {
+        console.warn('Timezone lookup failed:', timezoneError);
+      }
+
+      // Update the MiraAgent with location context (partial or complete)
+      this.miraAgent.updateLocationContext(locationInfo);
+
+      console.log(`User location: ${locationInfo.city}, ${locationInfo.state}, ${locationInfo.country}, ${locationInfo.timezone.name}`);
+    } catch (error) {
+      console.error('Error processing location:', error);
+      // Always update MiraAgent with fallback location context to ensure it continues working
+      this.miraAgent.updateLocationContext(fallbackLocationContext);
+    }
   }
 
   /**
@@ -302,8 +402,26 @@ class TranscriptionManager {
 
     this.isProcessingQuery = true;
 
+    let isRunning = true;
+
     if (!this.session.capabilities?.hasScreen) {
-      this.session.audio.playAudio({audioUrl: "https://okgodoit.com/popping.mp3"});
+      this.session.audio.playAudio({ audioUrl: "https://okgodoit.com/popping.mp3" }).then(() => {
+        if (isRunning) {
+          this.session.audio.playAudio({ audioUrl: "https://okgodoit.com/popping.mp3" }).then(() => {
+            if (isRunning) {
+              this.session.audio.playAudio({ audioUrl: "https://okgodoit.com/popping.mp3" }).then(() => {
+                if (isRunning) {
+                  this.session.audio.playAudio({ audioUrl: "https://okgodoit.com/popping.mp3" }).then(() => {
+                    if (isRunning) {
+                      this.session.audio.playAudio({ audioUrl: "https://okgodoit.com/popping.mp3" });
+                    }
+                  });
+                }
+              });
+            }
+          });
+        }
+      });
     }
 
     try {
@@ -331,6 +449,8 @@ class TranscriptionManager {
       // Process the query with the Mira agent
       const inputData = { query, photo: await this.getPhoto() };
       const agentResponse = await this.miraAgent.handleContext(inputData);
+
+      isRunning = false;
 
       if (!agentResponse) {
         console.log("No insight found");
@@ -518,10 +638,6 @@ class MiraServer extends AppServer {
       }
     });
 
-    session.events.onLocation((locationData) => {
-      this.handleLocation(locationData, sessionId);
-    });
-
     session.events.onPhoneNotifications((phoneNotifications) => {
       // console.log("$$$$$ Phone notifications:", phoneNotifications);
       this.handlePhoneNotifications(phoneNotifications, sessionId, userId);
@@ -536,97 +652,6 @@ class MiraServer extends AppServer {
     session.events.onError((error) => {
       console.error(`[User ${userId}] Error:`, error);
     });
-  }
-
-  /**
-   * Handles location updates with robust error handling
-   * Gracefully falls back to default values if location services fail
-   */
-  private async handleLocation(locationData: any, sessionId: string): Promise<void> {
-    // Default fallback location context
-    const fallbackLocationContext = {
-      city: 'Unknown',
-      state: 'Unknown',
-      country: 'Unknown',
-      timezone: {
-        name: 'Unknown',
-        shortName: 'Unknown',
-        fullName: 'Unknown',
-        offsetSec: 0,
-        isDst: false
-      }
-    };
-
-    try {
-      // console.log("$$$$$ Location data:", JSON.stringify(locationData));
-      const { lat, lng } = locationData;
-
-      // console.log(`Location data: ${JSON.stringify(locationData)}`);
-
-      if (!lat || !lng) {
-        console.log('Invalid location data received, using fallback');
-        this.agentPerSession.get(sessionId)?.updateLocationContext(fallbackLocationContext);
-        return;
-      }
-
-      let locationInfo = { ...fallbackLocationContext };
-
-      try {
-        // Use LocationIQ for reverse geocoding
-        const response = await fetch(
-          `https://us1.locationiq.com/v1/reverse.php?key=${LOCATIONIQ_TOKEN}&lat=${lat}&lon=${lng}&format=json`
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          const address = data.address;
-
-          if (address) {
-            locationInfo.city = address.city || address.town || address.village || 'Unknown city';
-            locationInfo.state = address.state || 'Unknown state';
-            locationInfo.country = address.country || 'Unknown country';
-          }
-        } else {
-          console.warn(`LocationIQ reverse geocoding failed with status: ${response.status}`);
-        }
-      } catch (geocodingError) {
-        console.warn('Reverse geocoding failed:', geocodingError);
-      }
-
-      try {
-        // Get timezone information
-        const timezoneResponse = await fetch(
-          `https://us1.locationiq.com/v1/timezone?key=${LOCATIONIQ_TOKEN}&lat=${lat}&lon=${lng}&format=json`
-        );
-
-        if (timezoneResponse.ok) {
-          const timezoneData = await timezoneResponse.json();
-
-          if (timezoneData.timezone) {
-            locationInfo.timezone = {
-              name: timezoneData.timezone.name || 'Unknown',
-              shortName: timezoneData.timezone.short_name || 'Unknown',
-              fullName: timezoneData.timezone.full_name || 'Unknown',
-              offsetSec: timezoneData.timezone.offset_sec || 0,
-              isDst: !!timezoneData.timezone.now_in_dst
-            };
-          }
-        } else {
-          console.warn(`LocationIQ timezone API failed with status: ${timezoneResponse.status}`);
-        }
-      } catch (timezoneError) {
-        console.warn('Timezone lookup failed:', timezoneError);
-      }
-
-      // Update the MiraAgent with location context (partial or complete)
-      this.agentPerSession.get(sessionId)?.updateLocationContext(locationInfo);
-
-      console.log(`User location: ${locationInfo.city}, ${locationInfo.state}, ${locationInfo.country}, ${locationInfo.timezone.name}`);
-    } catch (error) {
-      console.error('Error processing location:', error);
-      // Always update MiraAgent with fallback location context to ensure it continues working
-      this.agentPerSession.get(sessionId)?.updateLocationContext(fallbackLocationContext);
-    }
   }
 
   private handlePhoneNotifications(phoneNotifications: any, sessionId: string, userId: string): void {
