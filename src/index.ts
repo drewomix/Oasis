@@ -352,7 +352,6 @@ class TranscriptionManager {
       transcriptResponse = await fetch(backendUrl);
 
       console.log(`[Session ${this.sessionId}]: Response status: ${transcriptResponse.status}`);
-      console.log(`[Session ${this.sessionId}]: Response headers:`, Object.fromEntries(transcriptResponse.headers.entries()));
 
       if (!transcriptResponse.ok) {
         throw new Error(`HTTP ${transcriptResponse.status}: ${transcriptResponse.statusText}`);
@@ -372,8 +371,6 @@ class TranscriptionManager {
         console.error(`[Session ${this.sessionId}]: Response text that failed to parse:`, responseText);
         throw new Error(`Failed to parse JSON response: ${jsonError.message}`);
       }
-
-      console.log(`[Session ${this.sessionId}]: Parsed response:`, JSON.stringify(transcriptionResponse, null, 2));
 
     } catch (fetchError) {
       console.error(`[Session ${this.sessionId}]: Error fetching transcript:`, fetchError);
