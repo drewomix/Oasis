@@ -36,6 +36,7 @@ export class LLMProvider {
     const supportedOpenAIModels = [
       LLMModel.GPT4,
       LLMModel.GPT4_MINI,
+      'gpt-4.1-mini'
     ]
     const supportedAnthropicModels = [
       LLMModel.CLAUDE,
