@@ -12,6 +12,9 @@ const PACKAGE_NAME = process.env.PACKAGE_NAME;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
 const LOCATIONIQ_TOKEN = process.env.LOCATIONIQ_TOKEN;
 
+const PROCESSING_SOUND_URL = "https://mira.augmentos.cloud/popping.mp3";
+const START_LISTENING_SOUND_URL = "https://mira.augmentos.cloud/start.mp3";
+
 if (!AUGMENTOS_API_KEY) {
   throw new Error('AUGMENTOS_API_KEY is not set');
 }
@@ -160,14 +163,18 @@ class TranscriptionManager {
 
     if (!this.isListeningToQuery) {
       // play new sound effect
-      if (!this.session.capabilities?.hasScreen) {
-        this.session.audio.playAudio({audioUrl: "https://okgodoit.com/start.mp3"});
+      if (this.session.settings.get<boolean>("speak_response") || !this.session.capabilities?.hasScreen) {
+        this.session.audio.playAudio({audioUrl: START_LISTENING_SOUND_URL});
       }
-      this.session.location.getLatestLocation({accuracy: "realtime"}).then(location => {
-        if (location) {
-          this.handleLocation(location);
-        }
-      });
+      try {
+        this.session.location.getLatestLocation({accuracy: "realtime"}).then(location => {
+          if (location) {
+            this.handleLocation(location);
+          }
+        });
+      } catch (error) {
+        console.error(`[Session ${this.sessionId}]: Error getting location:`, error);
+      }
 
       // Start 15-second maximum listening timer
       this.maxListeningTimeoutId = setTimeout(() => {
@@ -412,16 +419,16 @@ class TranscriptionManager {
 
     let isRunning = true;
 
-    if (!this.session.capabilities?.hasScreen) {
-      this.session.audio.playAudio({ audioUrl: "https://okgodoit.com/popping.mp3" }).then(() => {
+    if (this.session.settings.get<boolean>("speak_response") || !this.session.capabilities?.hasScreen) {
+      this.session.audio.playAudio({ audioUrl: PROCESSING_SOUND_URL }).then(() => {
         if (isRunning) {
-          this.session.audio.playAudio({ audioUrl: "https://okgodoit.com/popping.mp3" }).then(() => {
+          this.session.audio.playAudio({ audioUrl: PROCESSING_SOUND_URL }).then(() => {
             if (isRunning) {
-              this.session.audio.playAudio({ audioUrl: "https://okgodoit.com/popping.mp3" }).then(() => {
+              this.session.audio.playAudio({ audioUrl: PROCESSING_SOUND_URL }).then(() => {
                 if (isRunning) {
-                  this.session.audio.playAudio({ audioUrl: "https://okgodoit.com/popping.mp3" }).then(() => {
+                  this.session.audio.playAudio({ audioUrl: PROCESSING_SOUND_URL }).then(() => {
                     if (isRunning) {
-                      this.session.audio.playAudio({ audioUrl: "https://okgodoit.com/popping.mp3" });
+                      this.session.audio.playAudio({ audioUrl: PROCESSING_SOUND_URL });
                     }
                   });
                 }
@@ -533,7 +540,7 @@ class TranscriptionManager {
 
   private async showOrSpeakText(text: string): Promise<void> {
     this.session.layouts.showTextWall(wrapText(text, 30), { durationMs: 5000 });
-    if (!this.session.capabilities?.hasScreen) {
+    if (this.session.settings.get<boolean>("speak_response") || !this.session.capabilities?.hasScreen) {
       try {
         const result = await this.session.audio.speak(text);
         if (result.error) {
