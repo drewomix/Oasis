@@ -419,6 +419,19 @@ class TranscriptionManager {
 
     let isRunning = true;
 
+    // Remove wake word from query
+    const query = this.removeWakeWord(rawCombinedText);
+
+    if (query.trim().length === 0) {
+      isRunning = false;
+      this.session.layouts.showTextWall(
+        wrapText("No query provided.", 30),
+        { durationMs: 5000 }
+      );
+      this.isProcessingQuery = false;
+      return;
+    }
+
     if (this.session.settings.get<boolean>("speak_response") || !this.session.capabilities?.hasScreen) {
       this.session.audio.playAudio({ audioUrl: PROCESSING_SOUND_URL }).then(() => {
         if (isRunning) {
@@ -440,17 +453,6 @@ class TranscriptionManager {
     }
 
     try {
-      // Remove wake word from query
-      const query = this.removeWakeWord(rawCombinedText);
-
-      if (query.trim().length === 0) {
-        this.session.layouts.showTextWall(
-          wrapText("No query provided.", 30),
-          { durationMs: 5000 }
-        );
-        return;
-      }
-
       // Show the query being processed
       let displayQuery = query;
       if (displayQuery.length > 60) {
