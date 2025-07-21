@@ -160,32 +160,31 @@ class TranscriptionManager {
       }
     }
 
+    // if (!this.isListeningToQuery) {
+    //   // play new sound effect
+    //   if (this.session.settings.get<boolean>("speak_response") || !this.session.capabilities?.hasScreen) {
+    //     this.session.audio.playAudio({audioUrl: START_LISTENING_SOUND_URL});
+    //   }
+    //   try {
+    //     this.session.location.getLatestLocation({accuracy: "realtime"}).then(location => {
+    //       if (location) {
+    //         this.handleLocation(location);
+    //       }
+    //     });
+    //   } catch (error) {
+    //     console.error(`[Session ${this.sessionId}]: Error getting location:`, error);
+    //   }
 
-    if (!this.isListeningToQuery) {
-      // play new sound effect
-      if (this.session.settings.get<boolean>("speak_response") || !this.session.capabilities?.hasScreen) {
-        this.session.audio.playAudio({audioUrl: START_LISTENING_SOUND_URL});
-      }
-      try {
-        this.session.location.getLatestLocation({accuracy: "realtime"}).then(location => {
-          if (location) {
-            this.handleLocation(location);
-          }
-        });
-      } catch (error) {
-        console.error(`[Session ${this.sessionId}]: Error getting location:`, error);
-      }
-
-      // Start 15-second maximum listening timer
-      this.maxListeningTimeoutId = setTimeout(() => {
-        console.log(`[Session ${this.sessionId}]: Maximum listening time (15s) reached, forcing query processing`);
-        if (this.timeoutId) {
-          clearTimeout(this.timeoutId);
-          this.timeoutId = undefined;
-        }
-        this.processQuery(text, 15000);
-      }, 15000);
-    }
+    //   // Start 15-second maximum listening timer
+    //   this.maxListeningTimeoutId = setTimeout(() => {
+    //     console.log(`[Session ${this.sessionId}]: Maximum listening time (15s) reached, forcing query processing`);
+    //     if (this.timeoutId) {
+    //       clearTimeout(this.timeoutId);
+    //       this.timeoutId = undefined;
+    //     }
+    //     this.processQuery(text, 15000);
+    //   }, 15000);
+    // }
 
     this.isListeningToQuery = true;
 
@@ -667,6 +666,13 @@ class MiraServer extends AppServer {
           ...transcriptionData,
           notifications: notificationsManager.getLatestNotifications(userId, 5)
         });
+      }
+    });
+
+    session.events.onLocation((locationData) => {
+      const transcriptionManager = this.transcriptionManagers.get(sessionId);
+      if (transcriptionManager) {
+        transcriptionManager.handleLocation(locationData);
       }
     });
 
