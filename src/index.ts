@@ -2,7 +2,7 @@ import path from 'path';
 import {
   AppSession,
   AppServer, PhotoData,
-  GIVE_APP_CONTROL_OF_TOOL_REPONSE
+  GIVE_APP_CONTROL_OF_TOOL_RESPONSE
 } from '@mentra/sdk';
 import { MiraAgent } from './agents';
 import { wrapText, TranscriptProcessor } from './utils';
@@ -473,7 +473,7 @@ class TranscriptionManager {
       if (!agentResponse) {
         console.log("No insight found");
         this.showOrSpeakText("Sorry, I couldn't find an answer to that.");
-      } else if (agentResponse === GIVE_APP_CONTROL_OF_TOOL_REPONSE) {
+      } else if (agentResponse === GIVE_APP_CONTROL_OF_TOOL_RESPONSE) {
         // the app is now in control, so don't do anything
       } else {
         let handled = false;
