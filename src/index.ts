@@ -140,73 +140,29 @@ class TranscriptionManager {
     // If we have a photo, update the last photo time
     if (!this.activePhotos.has(this.sessionId)) {
       if (this.session.capabilities?.hasCamera) {
-        // Use async function to handle photo request
-        const handlePhotoRequest = async () => {
-          try {
-            const photoData = await this.session.camera.requestPhoto();
-
-            // Check if this session is still valid before storing
-            if (this.activePhotos.has(this.sessionId)) {
-              this.activePhotos.set(this.sessionId, {
-                promise: Promise.resolve(photoData), // Wrap in resolved promise for consistency
-                photoData: photoData,
-                lastPhotoTime: Date.now()
-              });
-
-              // Clean up after 10 seconds
-              setTimeout(() => {
-                if (this.activePhotos.has(this.sessionId)) {
-                  const stored = this.activePhotos.get(this.sessionId);
-                  if (stored?.photoData === photoData) {
-                    this.activePhotos.delete(this.sessionId);
-                  }
-                }
-              }, 10000);
+        const getPhotoPromise = this.session.camera.requestPhoto();
+        getPhotoPromise.then(photoData => {
+          this.activePhotos.set(this.sessionId, {
+            promise: getPhotoPromise,
+            photoData: photoData,
+            lastPhotoTime: Date.now()
+          });
+          setTimeout(() => {
+            if (this.activePhotos.has(this.sessionId) && this.activePhotos.get(this.sessionId)?.promise == getPhotoPromise) {
+              this.activePhotos.delete(this.sessionId);
             }
-          } catch (error) {
-            this.logger.error(error, `[Session ${this.sessionId}]: Error getting photo:`);
-            this.activePhotos.delete(this.sessionId);
-          }
-        };
-
-        // Initialize with placeholder and start photo request
+          }, 10000);
+        }, error => {
+          this.logger.error(error, `[Session ${this.sessionId}]: Error getting photo:`);
+          this.activePhotos.delete(this.sessionId);
+        });
         this.activePhotos.set(this.sessionId, {
           promise: this.session.camera.requestPhoto(), // Keep original promise for compatibility
           photoData: null,
           lastPhotoTime: Date.now()
         });
-
-        // Start the async photo handling (fire and forget, but with proper error handling)
-        handlePhotoRequest();
       }
     }
-    // Old photo handling.
-    // if (!this.activePhotos.has(this.sessionId)) {
-    //   if (this.session.capabilities?.hasCamera) {
-    //     const getPhotoPromise = this.session.camera.requestPhoto();
-    //     getPhotoPromise.then(photoData => {
-    //       this.activePhotos.set(this.sessionId, {
-    //         promise: getPhotoPromise,
-    //         photoData: photoData,
-    //         lastPhotoTime: Date.now()
-    //       });
-    //       setTimeout(() => {
-    //         if (this.activePhotos.has(this.sessionId) && this.activePhotos.get(this.sessionId)?.promise == getPhotoPromise) {
-    //           this.activePhotos.delete(this.sessionId);
-    //         }
-    //       }, 10000);
-    //     });
-    //     this.activePhotos.set(this.sessionId, {
-    //       promise: getPhotoPromise,
-    //       photoData: null,
-    //       lastPhotoTime: Date.now()
-    //     });
-    //     getPhotoPromise.catch(error => {
-    //       this.logger.error(error, `[Session ${this.sessionId}]: Error getting photo:`);
-    //       this.activePhotos.delete(this.sessionId);
-    //     });
-    //   }
-    // }
 
     if (!this.isListeningToQuery) {
       // play new sound effect
@@ -218,9 +174,11 @@ class TranscriptionManager {
           if (location) {
             this.handleLocation(location);
           }
+        }, error => {
+          console.warn(`[Session ${this.sessionId}]: Error getting location:`, error);
         });
       } catch (error) {
-        console.error(`[Session ${this.sessionId}]: Error getting location:`, error);
+        console.warn(`[Session ${this.sessionId}]: Error getting location:`, error);
       }
 
       // Start 15-second maximum listening timer
@@ -785,10 +743,12 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error({ reason, promise }, '🥲 Unhandled Rejection at:');
-  // Log the error, clean up resources, then exit gracefully
   if (reason === "Photo request timed out") {
     return logger.warn("Photo request timed out, ignoring.");
+  } else if (reason === "Location poll request timed out") {
+    return logger.warn("Location poll request timed out, ignoring.");
+  } else {
+    logger.error({ reason, promise }, '🥲 Unhandled Rejection at:');
   }
-  process.exit(1);
+  //process.exit(1);
 });
