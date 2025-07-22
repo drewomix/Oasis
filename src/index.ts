@@ -1,8 +1,8 @@
 import path from 'path';
 import {
   AppSession,
-  AppServer,
-  PhotoData,
+  AppServer, PhotoData,
+  GIVE_APP_CONTROL_OF_TOOL_RESPONSE,
   logger
 } from '@mentra/sdk';
 import { MiraAgent } from './agents';
@@ -162,31 +162,31 @@ class TranscriptionManager {
       }
     }
 
-    // if (!this.isListeningToQuery) {
-    //   // play new sound effect
-    //   if (this.session.settings.get<boolean>("speak_response") || !this.session.capabilities?.hasScreen) {
-    //     this.session.audio.playAudio({audioUrl: START_LISTENING_SOUND_URL});
-    //   }
-    //   try {
-    //     this.session.location.getLatestLocation({accuracy: "realtime"}).then(location => {
-    //       if (location) {
-    //         this.handleLocation(location);
-    //       }
-    //     });
-    //   } catch (error) {
-    //     console.error(`[Session ${this.sessionId}]: Error getting location:`, error);
-    //   }
+    if (!this.isListeningToQuery) {
+      // play new sound effect
+      if (this.session.settings.get<boolean>("speak_response") || !this.session.capabilities?.hasScreen) {
+        this.session.audio.playAudio({audioUrl: START_LISTENING_SOUND_URL});
+      }
+      try {
+        this.session.location.getLatestLocation({accuracy: "high"}).then(location => {
+          if (location) {
+            this.handleLocation(location);
+          }
+        });
+      } catch (error) {
+        console.error(`[Session ${this.sessionId}]: Error getting location:`, error);
+      }
 
-    //   // Start 15-second maximum listening timer
-    //   this.maxListeningTimeoutId = setTimeout(() => {
-    //     console.log(`[Session ${this.sessionId}]: Maximum listening time (15s) reached, forcing query processing`);
-    //     if (this.timeoutId) {
-    //       clearTimeout(this.timeoutId);
-    //       this.timeoutId = undefined;
-    //     }
-    //     this.processQuery(text, 15000);
-    //   }, 15000);
-    // }
+      // Start 15-second maximum listening timer
+      this.maxListeningTimeoutId = setTimeout(() => {
+        console.log(`[Session ${this.sessionId}]: Maximum listening time (15s) reached, forcing query processing`);
+        if (this.timeoutId) {
+          clearTimeout(this.timeoutId);
+          this.timeoutId = undefined;
+        }
+        this.processQuery(text, 15000);
+      }, 15000);
+    }
 
     this.isListeningToQuery = true;
 
@@ -414,6 +414,19 @@ class TranscriptionManager {
 
     let isRunning = true;
 
+    // Remove wake word from query
+    const query = this.removeWakeWord(rawCombinedText);
+
+    if (query.trim().length === 0) {
+      isRunning = false;
+      this.session.layouts.showTextWall(
+        wrapText("No query provided.", 30),
+        { durationMs: 5000 }
+      );
+      this.isProcessingQuery = false;
+      return;
+    }
+
     if (this.session.settings.get<boolean>("speak_response") || !this.session.capabilities?.hasScreen) {
       this.session.audio.playAudio({ audioUrl: PROCESSING_SOUND_URL }).then(() => {
         if (isRunning) {
@@ -435,17 +448,6 @@ class TranscriptionManager {
     }
 
     try {
-      // Remove wake word from query
-      const query = this.removeWakeWord(rawCombinedText);
-
-      if (query.trim().length === 0) {
-        this.session.layouts.showTextWall(
-          wrapText("No query provided.", 30),
-          { durationMs: 5000 }
-        );
-        return;
-      }
-
       // Show the query being processed
       let displayQuery = query;
       if (displayQuery.length > 60) {
@@ -465,6 +467,8 @@ class TranscriptionManager {
       if (!agentResponse) {
         this.logger.info("No insight found");
         this.showOrSpeakText("Sorry, I couldn't find an answer to that.");
+      } else if (agentResponse === GIVE_APP_CONTROL_OF_TOOL_RESPONSE) {
+        // the app is now in control, so don't do anything
       } else {
         let handled = false;
         if (typeof agentResponse === 'string') {
@@ -737,5 +741,5 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (reason, promise) => {
   logger.error({ reason, promise }, '🥲 Unhandled Rejection at:');
   // Log the error, clean up resources, then exit gracefully
-  process.exit(1);
+  //process.exit(1);
 });
