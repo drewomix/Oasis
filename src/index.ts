@@ -149,15 +149,14 @@ class TranscriptionManager {
               this.activePhotos.delete(this.sessionId);
             }
           }, 10000);
+        }, error => {
+          this.logger.error(error, `[Session ${this.sessionId}]: Error getting photo:`);
+          this.activePhotos.delete(this.sessionId);
         });
         this.activePhotos.set(this.sessionId, {
           promise: getPhotoPromise,
           photoData: null,
           lastPhotoTime: Date.now()
-        });
-        getPhotoPromise.catch(error => {
-          this.logger.error(error, `[Session ${this.sessionId}]: Error getting photo:`);
-          this.activePhotos.delete(this.sessionId);
         });
       }
     }
@@ -172,9 +171,11 @@ class TranscriptionManager {
           if (location) {
             this.handleLocation(location);
           }
+        }, error => {
+          console.warn(`[Session ${this.sessionId}]: Error getting location:`, error);
         });
       } catch (error) {
-        console.error(`[Session ${this.sessionId}]: Error getting location:`, error);
+        console.warn(`[Session ${this.sessionId}]: Error getting location:`, error);
       }
 
       // Start 15-second maximum listening timer
@@ -739,7 +740,13 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  logger.error({ reason, promise }, '🥲 Unhandled Rejection at:');
+  if (reason === "Photo request timed out") {
+    return logger.warn("Photo request timed out, ignoring.");
+  } else if (reason === "Location poll request timed out") {
+    return logger.warn("Location poll request timed out, ignoring.");
+  } else {
+    logger.error({ reason, promise }, '🥲 Unhandled Rejection at:');
+  }
   // Log the error, clean up resources, then exit gracefully
   //process.exit(1);
 });
