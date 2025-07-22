@@ -13,7 +13,7 @@ import { TpaCommandsTool, TpaListAppsTool } from "./tools/TpaCommandsTool";
 import { TimerTool } from "./tools/TimerTool";
 import { ThinkingTool } from "./tools/ThinkingTool";
 import { Calculator } from "@langchain/community/tools/calculator";
-import { PhotoData } from "@mentra/sdk";
+import { AppServer, PhotoData, GIVE_APP_CONTROL_OF_TOOL_RESPONSE } from "@mentra/sdk";
 
 
 interface QuestionAnswer {
@@ -307,6 +307,9 @@ export class MiraAgent implements Agent {
                 toolResult = await selectedTool.invoke(toolInput, {
                   configurable: { runId: toolCall.id }
                 });
+                if (toolResult === GIVE_APP_CONTROL_OF_TOOL_RESPONSE) {
+                  return GIVE_APP_CONTROL_OF_TOOL_RESPONSE;
+                }
               } catch (error) {
                 console.error(`[MiraAgent] Error invoking tool ${toolCall.name}:`, error);
                 toolResult = `Error executing tool: ${error}`;
