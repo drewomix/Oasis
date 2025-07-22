@@ -1,7 +1,9 @@
 import path from 'path';
 import {
   AppSession,
-  AppServer, PhotoData
+  AppServer,
+  PhotoData,
+  logger
 } from '@mentra/sdk';
 import { MiraAgent } from './agents';
 import { wrapText, TranscriptProcessor } from './utils';
@@ -23,8 +25,7 @@ if (!PACKAGE_NAME) {
   throw new Error('PACKAGE_NAME is not set');
 }
 
-console.log(`Starting ${PACKAGE_NAME} server on port ${PORT}...`);
-console.log(`Using API key: ${AUGMENTOS_API_KEY}`);
+logger.info(`🚀🚀🚀 Starting ${PACKAGE_NAME} server on port ${PORT}... 🚀🚀🚀`);
 
 // Wake words that trigger Mira
 const explicitWakeWords = [
@@ -89,7 +90,8 @@ class TranscriptionManager {
   private activeTimers: Map<string, NodeJS.Timeout> = new Map(); // timerId -> timeoutId
   private serverUrl: string;
   private transcriptProcessor: TranscriptProcessor;
-  private activePhotos: Map<string, {promise: Promise<PhotoData>, photoData: PhotoData | null, lastPhotoTime: number}> = new Map();
+  private activePhotos: Map<string, { promise: Promise<PhotoData>, photoData: PhotoData | null, lastPhotoTime: number }> = new Map();
+  private logger: AppSession['logger'];
 
   constructor(session: AppSession, sessionId: string, userId: string, miraAgent: MiraAgent, serverUrl: string) {
     this.session = session;
@@ -99,6 +101,7 @@ class TranscriptionManager {
     this.serverUrl = serverUrl;
     // Use same settings as LiveCaptions for now
     this.transcriptProcessor = new TranscriptProcessor(30, 3, 3, false);
+    this.logger = session.logger.child({ service: 'Mira.TranscriptionManager' });
   }
 
   /**
@@ -107,7 +110,7 @@ class TranscriptionManager {
   handleTranscription(transcriptionData: any): void {
     // If a query is already being processed, ignore additional transcriptions
     if (this.isProcessingQuery) {
-      console.log(`[Session ${this.sessionId}]: Query already in progress. Ignoring transcription.`);
+      this.logger.info(`[Session ${this.sessionId}]: Query already in progress. Ignoring transcription.`);
       return;
     }
 
@@ -121,7 +124,6 @@ class TranscriptionManager {
     const hasWakeWord = explicitWakeWords.some(word => cleanedText.includes(word));
 
     if (!hasWakeWord && !this.isListeningToQuery) {
-      //console.log('No wake word detected');
       return;
     }
 
@@ -154,7 +156,7 @@ class TranscriptionManager {
           lastPhotoTime: Date.now()
         });
         getPhotoPromise.catch(error => {
-          console.error(`[Session ${this.sessionId}]: Error getting photo:`, error);
+          this.logger.error(error, `[Session ${this.sessionId}]: Error getting photo:`);
           this.activePhotos.delete(this.sessionId);
         });
       }
@@ -211,21 +213,18 @@ class TranscriptionManager {
 
     let timerDuration: number;
 
-    //console.log("$$$$$ transcriptionData:", transcriptionData);
     if (transcriptionData.isFinal) {
-      //console.log("$$$$$ transcriptionData.isFinal:", transcriptionData.isFinal);
       // Check if the final transcript ends with a wake word
       if (this.endsWithWakeWord(cleanedText)) {
         // If it ends with just a wake word, wait longer for additional query text
-        console.log("$$$$$ transcriptionData.isFinal: ends with wake word");
+        this.logger.debug("transcriptionData.isFinal: ends with wake word");
         timerDuration = 10000;
       } else {
-        //console.log("$$$$$ transcriptionData.isFinal: does not end with wake word");
         // Final transcript with additional content should be processed soon
         timerDuration = 1500;
       }
     } else {
-      //console.log("$$$$$ transcriptionData.isFinal: not final");
+      //this.logger.debug("transcriptionData.isFinal: not final");
       // For non-final transcripts
       timerDuration = 3000;
     }
@@ -253,12 +252,12 @@ class TranscriptionManager {
     return null;
   }
 
-   /**
-   * Handles location updates with robust error handling
-   * Gracefully falls back to default values if location services fail
-   */
-   public async handleLocation(locationData: any): Promise<void> {
-    console.log("$$$$$ Location data:", JSON.stringify(locationData));
+  /**
+  * Handles location updates with robust error handling
+  * Gracefully falls back to default values if location services fail
+  */
+  public async handleLocation(locationData: any): Promise<void> {
+    logger.debug({ locationData }, "$$$$$ Location data:");
     // Default fallback location context
     const fallbackLocationContext = {
       city: 'Unknown',
@@ -274,13 +273,10 @@ class TranscriptionManager {
     };
 
     try {
-      // console.log("$$$$$ Location data:", JSON.stringify(locationData));
       const { lat, lng } = locationData;
 
-      // console.log(`Location data: ${JSON.stringify(locationData)}`);
-
       if (!lat || !lng) {
-        console.log('Invalid location data received, using fallback');
+        this.logger.debug('Invalid location data received, using fallback');
         this.miraAgent.updateLocationContext(fallbackLocationContext);
         return;
       }
@@ -337,9 +333,9 @@ class TranscriptionManager {
       // Update the MiraAgent with location context (partial or complete)
       this.miraAgent.updateLocationContext(locationInfo);
 
-      console.log(`User location: ${locationInfo.city}, ${locationInfo.state}, ${locationInfo.country}, ${locationInfo.timezone.name}`);
+      this.logger.debug(`User location: ${locationInfo.city}, ${locationInfo.state}, ${locationInfo.country}, ${locationInfo.timezone.name}`);
     } catch (error) {
-      console.error('Error processing location:', error);
+      this.logger.error(error, 'Error processing location:');
       // Always update MiraAgent with fallback location context to ensure it continues working
       this.miraAgent.updateLocationContext(fallbackLocationContext);
     }
@@ -365,17 +361,17 @@ class TranscriptionManager {
     let transcriptionResponse: any;
 
     try {
-      console.log(`[Session ${this.sessionId}]: Fetching transcript from: ${backendUrl}`);
+      this.logger.debug(`[Session ${this.sessionId}]: Fetching transcript from: ${backendUrl}`);
       transcriptResponse = await fetch(backendUrl);
 
-      console.log(`[Session ${this.sessionId}]: Response status: ${transcriptResponse.status}`);
+      this.logger.debug(`[Session ${this.sessionId}]: Response status: ${transcriptResponse.status}`);
 
       if (!transcriptResponse.ok) {
         throw new Error(`HTTP ${transcriptResponse.status}: ${transcriptResponse.statusText}`);
       }
 
       const responseText = await transcriptResponse.text();
-      console.log(`[Session ${this.sessionId}]: Raw response body:`, responseText);
+      this.logger.debug(`[Session ${this.sessionId}]: Raw response body:`, responseText);
 
       if (!responseText || responseText.trim() === '') {
         throw new Error('Empty response body received');
@@ -384,13 +380,13 @@ class TranscriptionManager {
       try {
         transcriptionResponse = JSON.parse(responseText);
       } catch (jsonError) {
-        console.error(`[Session ${this.sessionId}]: JSON parsing failed:`, jsonError);
-        console.error(`[Session ${this.sessionId}]: Response text that failed to parse:`, responseText);
+        this.logger.error(jsonError, `[Session ${this.sessionId}]: JSON parsing failed:`);
+        this.logger.error({ responseText }, `[Session ${this.sessionId}]: Response text that failed to parse: ${responseText}`);
         throw new Error(`Failed to parse JSON response: ${jsonError.message}`);
       }
 
     } catch (fetchError) {
-      console.error(`[Session ${this.sessionId}]: Error fetching transcript:`, fetchError);
+      this.logger.error(fetchError, `[Session ${this.sessionId}]: Error fetching transcript:` + fetchError.message);
       this.session.layouts.showTextWall(
         wrapText("Sorry, there was an error retrieving your transcript. Please try again.", 30),
         { durationMs: 5000 }
@@ -399,7 +395,7 @@ class TranscriptionManager {
     }
 
     if (!transcriptionResponse || !transcriptionResponse.segments || !Array.isArray(transcriptionResponse.segments)) {
-      console.error(`[Session ${this.sessionId}]: Invalid response structure:`, transcriptionResponse);
+      this.logger.error({ transcriptionResponse }, `[Session ${this.sessionId}]: Invalid response structure:`);
       this.session.layouts.showTextWall(
         wrapText("Sorry, the transcript format was invalid. Please try again.", 30),
         { durationMs: 5000 }
@@ -467,7 +463,7 @@ class TranscriptionManager {
       isRunning = false;
 
       if (!agentResponse) {
-        console.log("No insight found");
+        this.logger.info("No insight found");
         this.showOrSpeakText("Sorry, I couldn't find an answer to that.");
       } else {
         let handled = false;
@@ -508,7 +504,7 @@ class TranscriptionManager {
         }
       }
     } catch (error) {
-      console.error(`[Session ${this.sessionId}]: Error processing query:`, error);
+      logger.error(error, `[Session ${this.sessionId}]: Error processing query:`);
       this.showOrSpeakText("Sorry, there was an error processing your request.");
     } finally {
       // Reset the state for future queries
@@ -543,10 +539,10 @@ class TranscriptionManager {
       try {
         const result = await this.session.audio.speak(text);
         if (result.error) {
-          console.error(`[Session ${this.sessionId}]: Error speaking text:`, result.error);
+          this.logger.error({ error: result.error }, `[Session ${this.sessionId}]: Error speaking text:`);
         }
       } catch (error) {
-        console.error(`[Session ${this.sessionId}]: Error speaking text:`, error);
+        this.logger.error(error, `[Session ${this.sessionId}]: Error speaking text:`);
       }
     }
   }
@@ -572,14 +568,12 @@ class TranscriptionManager {
    * Check if text ends with a wake word
    */
   private endsWithWakeWord(text: string): boolean {
-    //console.log("$$$$$ text:", text);
     // Remove trailing punctuation and whitespace, lowercase
     const cleanedText = text
       .toLowerCase()
       .replace(/[.,!?;:]/g, '') // remove all punctuation
       .replace(/\s+/g, ' ')     // normalize whitespace
       .trim();
-    //console.log("$$$$$ cleanedText:", cleanedText);
     return explicitWakeWords.some(word => {
       // Build a regex to match the wake word at the end, allowing for punctuation/whitespace
       const pattern = new RegExp(`${word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i');
@@ -628,7 +622,8 @@ class MiraServer extends AppServer {
    * Handle new session connections
    */
   protected async onSession(session: AppSession, sessionId: string, userId: string): Promise<void> {
-    console.log(`Setting up Mira service for session ${sessionId}, user ${userId}`);
+    const logger = session.logger.child({ service: 'Mira.MiraServer' });
+    logger.info(`Setting up Mira service for session ${sessionId}, user ${userId}`);
 
     const cleanServerUrl = getCleanServerUrl(session.getServerUrl());
     const agent = new MiraAgent(cleanServerUrl, userId);
@@ -637,10 +632,10 @@ class MiraServer extends AppServer {
       // Append tools to agent when they're available
       if (tools.length > 0) {
         agent.agentTools.push(...tools);
-        console.log(`Added ${tools.length} user tools to agent for user ${userId}`);
+        logger.info(`Added ${tools.length} user tools to agent for user ${userId}`);
       }
     }).catch(error => {
-      console.error(`Failed to load tools for user ${userId}:`, error);
+      logger.error(error, `Failed to load tools for user ${userId}:`);
     });
     this.agentPerSession.set(sessionId, agent);
 
@@ -677,18 +672,17 @@ class MiraServer extends AppServer {
     });
 
     session.events.onPhoneNotifications((phoneNotifications) => {
-      // console.log("$$$$$ Phone notifications:", phoneNotifications);
       this.handlePhoneNotifications(phoneNotifications, sessionId, userId);
     });
 
     // Handle connection events
     session.events.onConnected((settings) => {
-      console.log(`\n[User ${userId}] connected to augmentos-cloud\n`);
+      logger.info(`\n[User ${userId}] connected to augmentos-cloud\n`);
     });
 
     // Handle errors
     session.events.onError((error) => {
-      console.error(`[User ${userId}] Error:`, error);
+      logger.error(error, `[User ${userId}] Error: session error occurred`);
     });
   }
 
@@ -704,7 +698,7 @@ class MiraServer extends AppServer {
 
   // Handle session disconnection
   protected onStop(sessionId: string, userId: string, reason: string): Promise<void> {
-    console.log(`Stopping Mira service for session ${sessionId}, user ${userId}`);
+    logger.info(`Stopping Mira service for session ${sessionId}, user ${userId}`);
     const manager = this.transcriptionManagers.get(sessionId);
     if (manager) {
       manager.cleanup();
@@ -726,8 +720,22 @@ const server = new MiraServer({
 
 server.start()
   .then(() => {
-    console.log(`${PACKAGE_NAME} server running`);
+    logger.info(`${PACKAGE_NAME} server running`);
   })
   .catch(error => {
-    console.error('Failed to start server:', error);
+    logger.error(error, 'Failed to start server:');
   });
+
+
+// Log any unhandled promise rejections or uncaught exceptions to help with debugging.
+process.on('uncaughtException', (error) => {
+  logger.error(error, '🥲 Uncaught Exception:');
+  // Log the error, clean up resources, then exit gracefully
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({ reason, promise }, '🥲 Unhandled Rejection at:');
+  // Log the error, clean up resources, then exit gracefully
+  process.exit(1);
+});
