@@ -671,22 +671,25 @@ class MiraServer extends AppServer {
         });
       }
     });
-
+    /*
     session.events.onLocation((locationData) => {
       const transcriptionManager = this.transcriptionManagers.get(sessionId);
       if (transcriptionManager) {
         transcriptionManager.handleLocation(locationData);
       }
     });
+    */
 
     session.events.onPhoneNotifications((phoneNotifications) => {
       this.handlePhoneNotifications(phoneNotifications, sessionId, userId);
     });
 
     // Handle connection events
+    /*
     session.events.onConnected((settings) => {
       logger.info(`\n[User ${userId}] connected to augmentos-cloud\n`);
     });
+    */
 
     // Handle errors
     session.events.onError((error) => {
