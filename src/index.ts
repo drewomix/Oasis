@@ -212,7 +212,7 @@ class TranscriptionManager {
       // Show the live query as the user is talking
       let formatted = 'Listening...\n\n' + this.transcriptProcessor.processString(displayText, !!transcriptionData.isFinal).trim();
       // Add a listening indicator if not final
-      this.session.layouts.showTextWall(formatted, { durationMs: 10000 });
+      this.session.layouts.showTextWall(formatted, { durationMs: 20000 });
     }
 
     let timerDuration: number;
