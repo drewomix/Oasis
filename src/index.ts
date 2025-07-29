@@ -128,6 +128,7 @@ class TranscriptionManager {
       return;
     }
 
+    // if we have a photo and it's older than 5 seconds, delete it
     if (this.activePhotos.has(this.sessionId)) {
       const photo = this.activePhotos.get(this.sessionId);
       if (photo) {
@@ -137,8 +138,8 @@ class TranscriptionManager {
       }
     }
 
-    // If we have a photo, update the last photo time
     if (!this.activePhotos.has(this.sessionId)) {
+      // if we don't have a photo, get one
       if (this.session.capabilities?.hasCamera) {
         const getPhotoPromise = this.session.camera.requestPhoto();
         getPhotoPromise.then(photoData => {
@@ -148,10 +149,11 @@ class TranscriptionManager {
             lastPhotoTime: Date.now()
           });
           setTimeout(() => {
+            // if we have a photo and it's older than 30 seconds, delete it
             if (this.activePhotos.has(this.sessionId) && this.activePhotos.get(this.sessionId)?.promise == getPhotoPromise) {
               this.activePhotos.delete(this.sessionId);
             }
-          }, 10000);
+          }, 30000);
         }, error => {
           this.logger.error(error, `[Session ${this.sessionId}]: Error getting photo:`);
           this.activePhotos.delete(this.sessionId);
@@ -250,7 +252,15 @@ class TranscriptionManager {
       if (photo && photo.photoData) {
         return photo.photoData;
       } else {
-        return null;
+        if (photo?.promise) {
+          // wait up to 3 seconds for promise to resolve
+          this.logger.debug("Waiting for photo to resolve");
+          const result = await Promise.race([photo.promise, new Promise<null>(resolve => setTimeout(resolve, 3000))]) as PhotoData | null;
+          this.logger.debug(result, "Photo resolved");
+          return result;
+        } else {
+          return null;
+        }
       }
     }
     return null;
@@ -568,7 +578,7 @@ class TranscriptionManager {
       word.split(' ').join('[\\s,\\.]*')
     );
     // Create a regex that removes everything from the start until (and including) a wake word
-    const wakeRegex = new RegExp(`.*?(?:${wakePatterns.join('|')})[\\s,\\.]*`, 'i');
+    const wakeRegex = new RegExp(`.*?(?:${wakePatterns.join('|')})[\\s,\\.!]*`, 'i');
     return text.replace(wakeRegex, '').trim();
   }
 
