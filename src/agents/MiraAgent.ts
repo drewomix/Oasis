@@ -10,7 +10,7 @@ import { AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage } from
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { Tool, StructuredTool } from "langchain/tools";
 import { TpaCommandsTool, TpaListAppsTool } from "./tools/TpaCommandsTool";
-import { TimerTool } from "./tools/TimerTool";
+
 import { ThinkingTool } from "./tools/ThinkingTool";
 import { Calculator } from "@langchain/community/tools/calculator";
 import { AppServer, PhotoData, GIVE_APP_CONTROL_OF_TOOL_RESPONSE } from "@mentra/sdk";
@@ -82,7 +82,7 @@ export class MiraAgent implements Agent {
       new SearchToolForAgents(),
       new TpaListAppsTool(cloudUrl, userId),
       new TpaCommandsTool(cloudUrl, userId),
-      new TimerTool(),
+
       new ThinkingTool(),
       new Calculator(),
     ];
@@ -277,8 +277,10 @@ export class MiraAgent implements Agent {
         this.messages.push(new HumanMessage(query));
       }
 
+      console.log("fds");
+
       while (turns < 5) {
-        // console.log("MiraAgent Messages:", this.messages);
+        console.log("MiraAgent Messages:", this.messages);
         // Invoke the chain with the query
         const result: AIMessage = await llm.invoke(this.messages);
         this.messages.push(result);

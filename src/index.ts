@@ -88,7 +88,7 @@ class TranscriptionManager {
   private userId: string;
   private miraAgent: MiraAgent;
   private transcriptionStartTime: number = 0;
-  private activeTimers: Map<string, NodeJS.Timeout> = new Map(); // timerId -> timeoutId
+
   private serverUrl: string;
   private transcriptProcessor: TranscriptProcessor;
   private activePhotos: Map<string, { promise: Promise<PhotoData>, photoData: PhotoData | null, lastPhotoTime: number }> = new Map();
@@ -492,18 +492,6 @@ class TranscriptionManager {
             // Generic event handler for tool outputs
             if (parsed && parsed.event) {
               switch (parsed.event) {
-                case 'timer_set':
-                  if (parsed.duration) {
-                    const labelText = parsed.label ? ` for "${parsed.label}"` : '';
-                    this.showOrSpeakText(`Timer set${labelText} for ${parsed.duration} seconds.`);
-                    const timeout = setTimeout(() => {
-                      this.showOrSpeakText(`Timer${labelText} is up!`);
-                      this.activeTimers.delete(parsed.timerId);
-                    }, parsed.duration * 1000);
-                    this.activeTimers.set(parsed.timerId, timeout);
-                    handled = true;
-                  }
-                  break;
                 // Add more cases here for future tool events
                 // case 'notification':
                 //   // handle notification event
@@ -610,11 +598,7 @@ class TranscriptionManager {
     if (this.maxListeningTimeoutId) {
       clearTimeout(this.maxListeningTimeoutId);
     }
-    // Clear all active timers
-    for (const timeout of this.activeTimers.values()) {
-      clearTimeout(timeout);
-    }
-    this.activeTimers.clear();
+
   }
 }
 

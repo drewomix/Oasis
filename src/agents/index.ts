@@ -4,5 +4,4 @@ export * from "./MiraAgent";
 export * from "./NewsAgent";
 export * from "./NotificationFilterAgent";
 export * from  "./tools/SearchToolForAgents";
-export * from  "./tools/TimerTool";
 
