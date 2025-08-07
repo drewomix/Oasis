@@ -94,6 +94,16 @@ class TranscriptionManager {
   private activePhotos: Map<string, { promise: Promise<PhotoData>, photoData: PhotoData | null, lastPhotoTime: number }> = new Map();
   private logger: AppSession['logger'];
 
+    /**
+     * Tracks the last observed head position and a time window during which
+     * a wake word will be accepted (only when the optional mode is enabled).
+     * The window is started when the head position changes from 'down' -> 'up'.
+     */
+    private lastHeadPosition: string | null = null;
+    private headWakeWindowUntilMs: number = 0;
+    private transcriptionUnsubscribe?: () => void;
+    private headWindowTimeoutId?: NodeJS.Timeout;
+
   constructor(session: AppSession, sessionId: string, userId: string, miraAgent: MiraAgent, serverUrl: string) {
     this.session = session;
     this.sessionId = sessionId;
@@ -103,6 +113,8 @@ class TranscriptionManager {
     // Use same settings as LiveCaptions for now
     this.transcriptProcessor = new TranscriptProcessor(30, 3, 3, false);
     this.logger = session.logger.child({ service: 'Mira.TranscriptionManager' });
+    // Initialize subscription state based on setting
+    this.initTranscriptionSubscription();
   }
 
   /**
@@ -124,9 +136,22 @@ class TranscriptionManager {
       .trim();
     const hasWakeWord = explicitWakeWords.some(word => cleanedText.includes(word));
 
-    if (!hasWakeWord && !this.isListeningToQuery) {
-      return;
-    }
+      // Optional setting: only allow wake word within 10s after head moves down->up
+      const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
+      const now = Date.now();
+      const withinHeadWindow = now <= this.headWakeWindowUntilMs;
+
+      // Gate wake word if the optional mode is enabled
+      if (!this.isListeningToQuery) {
+        if (!hasWakeWord) {
+          return;
+        }
+        if (requireHeadUpWindow && !withinHeadWindow) {
+          // Wake word was spoken but not within the head-up window; ignore
+          this.logger.debug('Wake word ignored: outside head-up activation window');
+          return;
+        }
+      }
 
     // if we have a photo and it's older than 5 seconds, delete it
     if (this.activePhotos.has(this.sessionId)) {
@@ -168,7 +193,8 @@ class TranscriptionManager {
 
     if (!this.isListeningToQuery) {
       // play new sound effect
-      if (this.session.settings.get<boolean>("speak_response") || !this.session.capabilities?.hasScreen) {
+      const hasScreenStart = (this.session.capabilities as any)?.hasScreen;
+      if (this.session.settings.get<boolean>("speak_response") || !hasScreenStart) {
         this.session.audio.playAudio({audioUrl: START_LISTENING_SOUND_URL});
       }
       try {
@@ -200,6 +226,8 @@ class TranscriptionManager {
     if (this.transcriptionStartTime === 0) {
       this.transcriptionStartTime = Date.now();
     }
+
+
 
     // Remove wake word for display
     const displayText = this.removeWakeWord(text);
@@ -244,6 +272,71 @@ class TranscriptionManager {
     this.timeoutId = setTimeout(() => {
       this.processQuery(text, timerDuration);
     }, timerDuration);
+  }
+
+  /**
+   * Handle head position updates from the session. If the head transitions
+   * from 'down' to 'up', open a 10s window during which the wake word will
+   * activate listening (when the setting `wake_requires_head_up` is enabled).
+   */
+  public handleHeadPosition(headPositionData: any): void {
+    try {
+      // Derive a simple position string from provided data
+      let current: string | null = null;
+      if (typeof headPositionData === 'string') {
+        current = headPositionData.toLowerCase();
+      } else if (headPositionData && typeof headPositionData.position === 'string') {
+        current = String(headPositionData.position).toLowerCase();
+      }
+
+      if (!current) {
+        return;
+      }
+
+      const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
+      if (!requireHeadUpWindow) {
+        this.lastHeadPosition = current;
+        return;
+      }
+
+      // Start window only on transition down -> up
+      if (this.lastHeadPosition === 'down' && current === 'up') {
+        this.headWakeWindowUntilMs = Date.now() + 10_000;
+        this.logger.debug({ until: this.headWakeWindowUntilMs }, 'Head up detected: wake window opened for 10s');
+        // Subscribe to transcriptions to listen for wake word during the window
+        this.ensureTranscriptionSubscribed();
+        // Stop listening after 10s if wake word not spoken
+        if (this.headWindowTimeoutId) {
+          clearTimeout(this.headWindowTimeoutId);
+        }
+        this.headWindowTimeoutId = setTimeout(() => {
+          if (!this.isListeningToQuery) {
+            this.logger.debug('Head-up window expired without wake word; unsubscribing from transcriptions');
+            this.ensureTranscriptionUnsubscribed();
+          }
+          this.headWakeWindowUntilMs = 0;
+          this.headWindowTimeoutId = undefined;
+        }, 10_000);
+      }
+
+      this.lastHeadPosition = current;
+    } catch (error) {
+      this.logger.warn(error as Error, 'Failed to handle head position event');
+    }
+  }
+
+  /**
+   * Initialize subscription state based on the current setting.
+   */
+  public initTranscriptionSubscription(): void {
+    const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
+    if (requireHeadUpWindow) {
+      // Start unsubscribed; will subscribe on head-up
+      this.ensureTranscriptionUnsubscribed();
+    } else {
+      // Normal mode: always subscribe
+      this.ensureTranscriptionSubscribed();
+    }
   }
 
   private async getPhoto(): Promise<PhotoData | null> {
@@ -441,7 +534,8 @@ class TranscriptionManager {
       return;
     }
 
-    if (this.session.settings.get<boolean>("speak_response") || !this.session.capabilities?.hasScreen) {
+    const hasScreenProcessing = (this.session.capabilities as any)?.hasScreen;
+    if (this.session.settings.get<boolean>("speak_response") || !hasScreenProcessing) {
       this.session.audio.playAudio({ audioUrl: PROCESSING_SOUND_URL }).then(() => {
         if (isRunning) {
           this.session.audio.playAudio({ audioUrl: PROCESSING_SOUND_URL }).then(() => {
@@ -528,6 +622,11 @@ class TranscriptionManager {
 
       // Reset listening state
       this.isListeningToQuery = false;
+      // If head-up window mode is on and there is no active window, unsubscribe to save battery
+      const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
+      if (requireHeadUpWindow && Date.now() > this.headWakeWindowUntilMs) {
+        this.ensureTranscriptionUnsubscribed();
+      }
 
       // Clear transcript processor for next query
       this.transcriptProcessor.clear();
@@ -541,7 +640,8 @@ class TranscriptionManager {
 
   private async showOrSpeakText(text: string): Promise<void> {
     this.session.layouts.showTextWall(wrapText(text, 30), { durationMs: 5000 });
-    if (this.session.settings.get<boolean>("speak_response") || !this.session.capabilities?.hasScreen) {
+    const hasScreenProcess = (this.session.capabilities as any)?.hasScreen;
+    if (this.session.settings.get<boolean>("speak_response") || !hasScreenProcess) {
       try {
         const result = await this.session.audio.speak(text);
         if (result.error) {
@@ -549,6 +649,34 @@ class TranscriptionManager {
         }
       } catch (error) {
         this.logger.error(error, `[Session ${this.sessionId}]: Error speaking text:`);
+      }
+    }
+  }
+
+  /**
+   * Subscribe to transcriptions if not already subscribed.
+   */
+  public ensureTranscriptionSubscribed(): void {
+    if (this.transcriptionUnsubscribe) {
+      return;
+    }
+    this.transcriptionUnsubscribe = this.session.events.onTranscription((transcriptionData) => {
+      this.handleTranscription({
+        ...transcriptionData,
+        notifications: notificationsManager.getLatestNotifications(this.userId, 5)
+      });
+    });
+  }
+
+  /**
+   * Unsubscribe from transcriptions to save battery when not needed.
+   */
+  public ensureTranscriptionUnsubscribed(): void {
+    if (this.transcriptionUnsubscribe && !this.isListeningToQuery) {
+      try {
+        this.transcriptionUnsubscribe();
+      } finally {
+        this.transcriptionUnsubscribe = undefined;
       }
     }
   }
@@ -654,16 +782,18 @@ class MiraServer extends AppServer {
     //   { durationMs: 3000 }
     // );
 
-    // Handle transcription data
-    session.events.onTranscription((transcriptionData) => {
+    // Do not subscribe globally to transcription in head-up mode.
+    // Each TranscriptionManager manages its own subscription to save battery.
+
+    // Handle head position changes (used for optional head-up wake window)
+    session.events.onHeadPosition((headPositionData) => {
       const transcriptionManager = this.transcriptionManagers.get(sessionId);
-      if (transcriptionManager) {
-        // Attach notifications to MiraAgent for context by passing them in userContext
-        transcriptionManager.handleTranscription({
-          ...transcriptionData,
-          notifications: notificationsManager.getLatestNotifications(userId, 5)
-        });
-      }
+      transcriptionManager?.handleHeadPosition(headPositionData);
+    });
+    // Also listen for setting changes to update subscription strategy dynamically
+    session.settings.onChange((settings) => {
+      const manager = this.transcriptionManagers.get(sessionId);
+      manager?.initTranscriptionSubscription();
     });
     /*
     session.events.onLocation((locationData) => {
