@@ -166,7 +166,7 @@ class TranscriptionManager {
     if (!this.activePhotos.has(this.sessionId)) {
       // if we don't have a photo, get one
       if (this.session.capabilities?.hasCamera) {
-        const getPhotoPromise = this.session.camera.requestPhoto();
+        const getPhotoPromise = this.session.camera.requestPhoto({size: "small"});
         getPhotoPromise.then(photoData => {
           this.activePhotos.set(this.sessionId, {
             promise: getPhotoPromise,
@@ -193,7 +193,7 @@ class TranscriptionManager {
 
     if (!this.isListeningToQuery) {
       // play new sound effect
-      const hasScreenStart = (this.session.capabilities as any)?.hasScreen;
+      const hasScreenStart = this.session.capabilities?.hasDisplay;
       if (this.session.settings.get<boolean>("speak_response") || !hasScreenStart) {
         this.session.audio.playAudio({audioUrl: START_LISTENING_SOUND_URL});
       }
@@ -534,7 +534,7 @@ class TranscriptionManager {
       return;
     }
 
-    const hasScreenProcessing = (this.session.capabilities as any)?.hasScreen;
+    const hasScreenProcessing = this.session.capabilities?.hasDisplay;
     if (this.session.settings.get<boolean>("speak_response") || !hasScreenProcessing) {
       this.session.audio.playAudio({ audioUrl: PROCESSING_SOUND_URL }).then(() => {
         if (isRunning) {
@@ -640,7 +640,7 @@ class TranscriptionManager {
 
   private async showOrSpeakText(text: string): Promise<void> {
     this.session.layouts.showTextWall(wrapText(text, 30), { durationMs: 5000 });
-    const hasScreenProcess = (this.session.capabilities as any)?.hasScreen;
+    const hasScreenProcess = this.session.capabilities?.hasDisplay;
     if (this.session.settings.get<boolean>("speak_response") || !hasScreenProcess) {
       try {
         const result = await this.session.audio.speak(text);
