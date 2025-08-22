@@ -184,7 +184,8 @@ class TranscriptionManager {
           this.activePhotos.delete(this.sessionId);
         });
         this.activePhotos.set(this.sessionId, {
-          promise: this.session.camera.requestPhoto(), // Keep original promise for compatibility
+          // promise: this.session.camera.requestPhoto(), // Keep original promise for compatibility
+          promise: getPhotoPromise, // Keep original promise for compatibility
           photoData: null,
           lastPhotoTime: Date.now()
         });
