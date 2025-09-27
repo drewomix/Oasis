@@ -10,6 +10,8 @@ import { AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage } from
 import { ChatPromptTemplate } from "@langchain/core/prompts";
 import { Tool, StructuredTool } from "langchain/tools";
 import { TpaCommandsTool, TpaListAppsTool } from "./tools/TpaCommandsTool";
+import { SmartAppControlTool } from "./tools/SmartAppControlTool";
+import { AppManagementAgent } from "./AppManagementAgent";
 
 import { ThinkingTool } from "./tools/ThinkingTool";
 import { Calculator } from "@langchain/community/tools/calculator";
@@ -50,6 +52,7 @@ export class MiraAgent implements Agent {
     "Answers user queries from smart glasses using conversation context and history.";
   public agentPrompt = systemPromptBlueprint;
   public agentTools:(Tool | StructuredTool)[];
+  private appManagementAgent: AppManagementAgent;
 
   public messages: BaseMessage[] = [];
 
@@ -78,8 +81,13 @@ export class MiraAgent implements Agent {
   };
 
   constructor(cloudUrl: string, userId: string) {
+    // Initialize the specialized app management agent
+    this.appManagementAgent = new AppManagementAgent(cloudUrl, userId);
+    
     this.agentTools = [
       new SearchToolForAgents(),
+      new SmartAppControlTool(cloudUrl, userId),
+      // Keep these for backward compatibility or advanced use cases
       new TpaListAppsTool(cloudUrl, userId),
       new TpaCommandsTool(cloudUrl, userId),
 
@@ -216,7 +224,7 @@ export class MiraAgent implements Agent {
         return { result: "No query provided." };
       }
 
-      console.log("Query:", query);
+      console.log("Query:", query);     
       console.log("Location Context:", this.locationContext);
       // Only add location context if we have a valid city
       const locationInfo = this.locationContext.city !== 'Unknown'

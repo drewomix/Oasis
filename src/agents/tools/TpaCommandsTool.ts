@@ -1,6 +1,8 @@
 import { StructuredTool } from '@langchain/core/tools';
 import axios from 'axios';
 import { z } from 'zod';
+// import { findMatchedApp } from '../../utils/chatgpt/presets';
+import { stringify } from 'querystring';
 
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
@@ -57,6 +59,7 @@ export class TpaListAppsTool extends StructuredTool {
         }));
         result = JSON.stringify(simplifiedApps, null, 2);
       }
+      console.log(`[TpaListAppsTool] Fetched apps:`, JSON.stringify(apps, null, 2));
       console.log(`[TpaListAppsTool] Returning to LLM:`, result);
       return result;
     } catch (error) {
@@ -66,7 +69,7 @@ export class TpaListAppsTool extends StructuredTool {
     }
   }
 
-  private async getAllApps(): Promise<AppInfo[]> {
+  public async getAllApps(): Promise<AppInfo[]> {
     try {
       // Use the correct API endpoint from the routes file
       const url = `${this.cloudUrl}/api/apps?apiKey=${AUGMENTOS_API_KEY}&packageName=${PACKAGE_NAME}&userId=${this.userId}`;
@@ -168,4 +171,6 @@ export class TpaCommandsTool extends StructuredTool {
       return `Unknown error while trying to ${action} app: ${error}`;
     }
   }
+
+ 
 }
