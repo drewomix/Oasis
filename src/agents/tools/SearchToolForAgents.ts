@@ -2,10 +2,14 @@
 
 import { StructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
+import {
+  logger as _logger
+} from '@mentra/sdk';
 
 // Get Jina API key from environment
 // Get your Jina AI API key for free: https://jina.ai/?sui=apikey
 export const JINA_API_KEY = process.env.JINA_API_KEY || "";
+const PACKAGE_NAME = process.env.PACKAGE_NAME;
 
 // Define the input schema using zod
 const SearchInputSchema = z.object({
@@ -47,6 +51,9 @@ export class SearchToolForAgents extends StructuredTool {
    */
   async _call(input: SearchInput): Promise<string> {
     const { searchKeyword, location } = input;
+    console.log("JINA IS WORKING")
+    const logger = _logger.child({app: PACKAGE_NAME});
+    logger.debug("[SearchToolForAgents.ts] Running...")
 
     // Validate that we have an API key
     if (!JINA_API_KEY) {
@@ -72,9 +79,10 @@ export class SearchToolForAgents extends StructuredTool {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${JINA_API_KEY}`,
-          'X-Engine': 'direct',
+          // 'X-Engine': 'direct',
           'X-Retain-Images': 'none',
-          'X-Timeout': '5'
+          'X-Timeout': '1',
+          'X-Respond-With': "no-content"
         }
       });
 

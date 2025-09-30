@@ -29,15 +29,48 @@ export async function getAllToolsForPackage(cloudUrl: string, tpaPackageName: st
   return tools;
 }
 
+
+
+/**
+ * Compiles a third-party application tool schema into a LangChain DynamicStructuredTool.
+ *
+ * This function takes a tool schema from the cloud service and creates an executable
+ * LangChain tool that can be used by AI agents. It handles parameter validation,
+ * type conversion, and webhook communication with the TPA backend.
+ *
+ * @param cloudUrl - The base URL of the cloud service hosting the TPA tools
+ * @param tpaPackageName - The package name of the third-party application
+ * @param tpaTool - The tool schema containing metadata, parameters, and configuration
+ * @param actingUserId - The ID of the user on whose behalf the tool will execute
+ * @returns A LangChain DynamicStructuredTool ready for agent use
+ *
+ * @example
+ * ```typescript
+ * const weatherTool = compileTool(
+ *   'https://api.example.com',
+ *   'com.weather.app',
+ *   {
+ *     id: 'get-weather',
+ *     description: 'Get current weather',
+ *     parameters: {
+ *       location: { type: 'string', required: true, description: 'City name' }
+ *     }
+ *   },
+ *   'user123'
+ * );
+ * ```
+ */
 export function compileTool(cloudUrl: string, tpaPackageName: string, tpaTool: ToolSchema, actingUserId: string) {
+  // Build Zod schema from tool parameter definitions
+  // This converts the TPA tool schema into a format LangChain can validate
   const paramsSchema = tpaTool.parameters ? z.object(
     Object.entries(tpaTool.parameters).reduce((schema, [key, param]) => {
-      // Start with the base schema based on type
+      // Create base Zod schema based on parameter type
       let fieldSchema;
       switch (param.type) {
         case 'string':
           fieldSchema = z.string().describe(param.description);
-          // Add enum validation if provided
+          // Handle enum constraints for string parameters
           if (param.enum && param.enum.length > 0) {
             fieldSchema = z.enum(param.enum as [string, ...string[]]).describe(param.description);
           }
@@ -49,11 +82,11 @@ export function compileTool(cloudUrl: string, tpaPackageName: string, tpaTool: T
           fieldSchema = z.boolean().describe(param.description);
           break;
         default:
-          // Default to any for unknown types
+          // Fallback for unknown parameter types
           fieldSchema = z.any().describe(param.description);
       }
 
-      // Make optional if not required
+      // Make parameter optional if not marked as required
       if (!param.required) {
         fieldSchema = fieldSchema.optional();
       }
@@ -62,54 +95,61 @@ export function compileTool(cloudUrl: string, tpaPackageName: string, tpaTool: T
     }, {})
   ) : undefined;
 
+  // Enhance tool description with activation phrases for better AI understanding
   let description = tpaTool.description;
   if (tpaTool.activationPhrases && tpaTool.activationPhrases.length > 0) {
     description += "\nPossibly activated by phrases like: " + tpaTool.activationPhrases?.join(', ')
   }
 
+  // Create the executable LangChain tool with async implementation
   return tool(
     async (input): Promise<string> => {
-      // Construct the webhook URL for the TPA tool
+      // Build webhook endpoint URL for this specific TPA tool
       const webhookUrl = cloudUrl + `/api/tools/apps/${tpaPackageName}/tool`;
 
-      // Prepare the payload with the input parameters
-      // Check if input is a string and set payload accordingly
-      const params:any = typeof input === 'string' ? {} : input;
+      // Handle different input formats - LangChain may pass strings or objects
+      const params: any = typeof input === 'string' ? {} : input;
+
+      // Construct payload matching the ToolCall interface requirements
       const payload: ToolCall = {
         toolId: tpaTool.id,
         toolParameters: params,
         timestamp: new Date(),
         userId: actingUserId,
+        activeSession: null, // Set to null as no active session context is available
       }
+
       console.log(`[toolcall] Sending request to ${tpaTool.id} with params: ${JSON.stringify(params)}`);
+
       try {
-        // Send the request to the TPA webhook with a 40-second timeout
+        // Execute the tool by posting to the TPA webhook endpoint
         const response = await axios.post(webhookUrl, payload, {
           headers: {
             'Content-Type': 'application/json',
           },
-          timeout: 40000 // 10 second timeout for the request
+          timeout: 40000 // 40-second timeout for tool execution
         });
+
         console.log(`[toolcall] Response from ${tpaTool.id}: ${JSON.stringify(response.data)}`);
-        // Return the successful response data
         return response.data;
+
       } catch (error) {
-        // Handle Axios errors (including timeouts)
+        // Comprehensive error handling with detailed logging
         if (axios.isAxiosError(error)) {
-          // Check if it's a timeout error
+          // Handle timeout errors specifically
           if (error.code === 'ECONNABORTED') {
             console.error(`[toolcall] TPA tool request timed out for ${tpaTool.id}`);
-            return `The request to ${tpaTool.id} timed out after 10 seconds. Please try again later.`;
+            return `The request to ${tpaTool.id} timed out after 40 seconds. Please try again later.`;
           }
 
-          // Handle other Axios errors
+          // Handle HTTP and network errors
           console.error(`[toolcall] TPA tool request failed for ${tpaTool.id}: ${error.message}`);
           console.error(`[toolcall] Status: ${error.response?.status}`);
           console.error(`[toolcall] Response: ${JSON.stringify(error.response?.data)}`);
-
           return `Error executing ${tpaTool.id}: ${error.message}`;
+
         } else {
-          // Handle non-Axios errors
+          // Handle unexpected errors
           const genericError = error as Error;
           console.error(`[toolcall] TPA tool execution error: ${genericError.message}`);
           return `Error executing ${tpaTool.id}: ${genericError.message || 'Unknown error'}`;

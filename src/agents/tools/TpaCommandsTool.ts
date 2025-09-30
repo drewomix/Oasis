@@ -1,7 +1,9 @@
 import { StructuredTool } from '@langchain/core/tools';
 import axios from 'axios';
 import { z } from 'zod';
-// import { findMatchedApp } from '../../utils/chatgpt/presets';
+import {
+  logger as _logger
+} from '@mentra/sdk';
 import { stringify } from 'querystring';
 
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
@@ -44,6 +46,9 @@ export class TpaListAppsTool extends StructuredTool {
   }
 
   async _call(input: { includeRunning?: boolean }): Promise<string> {
+
+    const logger = _logger.child({app: PACKAGE_NAME});
+    logger.debug("[TpaCommandsTool.ts] Running...")
     console.log("TpaListAppsTool Input:", input);
     try {
       const apps = await this.getAllApps();
