@@ -3,12 +3,13 @@ import {
   AppSession,
   AppServer, PhotoData,
   GIVE_APP_CONTROL_OF_TOOL_RESPONSE,
-  logger
+  logger as _logger
 } from '@mentra/sdk';
 import { MiraAgent } from './agents';
 import { wrapText, TranscriptProcessor } from './utils';
 import { getAllToolsForUser } from './agents/tools/TpaTool';
 import { log } from 'console';
+import { Anim } from './utils/anim';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
@@ -26,6 +27,7 @@ if (!PACKAGE_NAME) {
   throw new Error('PACKAGE_NAME is not set');
 }
 
+const logger = _logger.child({app: PACKAGE_NAME});
 logger.info(`🚀🚀🚀 Starting ${PACKAGE_NAME} server on port ${PORT}... 🚀🚀🚀`);
 
 // Wake words that trigger Mira
@@ -45,7 +47,7 @@ const explicitWakeWords = [
   "hey mear", "he mear", "hey miras", "he miras", "hey miora", "he miora", "hey miri", "he miri",
   "hey maura", "he maura", "hey maya", "he maya", "hey moora", "he moora",
   "hey mihrah", "he mihrah", "ay mira", "ey mira", "yay mira", "hey mihra",
-  "hey mera", "hey mira", "hey mila", "hey mirra"
+  "hey mera", "hey mira", "hey mila", "hey mirra",
 ];
 
 /**
@@ -210,6 +212,7 @@ class TranscriptionManager {
         console.warn(`[Session ${this.sessionId}]: Error getting location:`, error);
       }
 
+      //todo _____________
       // Start 15-second maximum listening timer
       this.maxListeningTimeoutId = setTimeout(() => {
         console.log(`[Session ${this.sessionId}]: Maximum listening time (15s) reached, forcing query processing`);
@@ -220,6 +223,8 @@ class TranscriptionManager {
         this.processQuery(text, 15000);
       }, 15000);
     }
+//todo _____________
+
 
     this.isListeningToQuery = true;
 
@@ -247,7 +252,7 @@ class TranscriptionManager {
     }
 
     let timerDuration: number;
-
+    //todo _____________
     if (transcriptionData.isFinal) {
       // Check if the final transcript ends with a wake word
       if (this.endsWithWakeWord(cleanedText)) {
@@ -274,6 +279,7 @@ class TranscriptionManager {
       this.processQuery(text, timerDuration);
     }, timerDuration);
   }
+  //todo _____________
 
   /**
    * Handle head position updates from the session. If the head transitions
@@ -306,15 +312,15 @@ class TranscriptionManager {
         this.logger.debug({ until: this.headWakeWindowUntilMs }, 'Head up detected: wake window opened for 10s');
         // Subscribe to transcriptions to listen for wake word during the window
         this.ensureTranscriptionSubscribed();
-        // Stop listening after 10s if wake word not spoken
+        // ALWAYS STAY SUBSCRIBED - DEBUGGING ISSUE
         if (this.headWindowTimeoutId) {
           clearTimeout(this.headWindowTimeoutId);
         }
         this.headWindowTimeoutId = setTimeout(() => {
-          if (!this.isListeningToQuery) {
-            this.logger.debug('Head-up window expired without wake word; unsubscribing from transcriptions');
-            this.ensureTranscriptionUnsubscribed();
-          }
+          // if (!this.isListeningToQuery) {
+          //   this.logger.debug('Head-up window expired without wake word; unsubscribing from transcriptions');
+          //   this.ensureTranscriptionUnsubscribed();
+          // }
           this.headWakeWindowUntilMs = 0;
           this.headWindowTimeoutId = undefined;
         }, 10_000);
@@ -330,14 +336,16 @@ class TranscriptionManager {
    * Initialize subscription state based on the current setting.
    */
   public initTranscriptionSubscription(): void {
-    const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
-    if (requireHeadUpWindow) {
-      // Start unsubscribed; will subscribe on head-up
-      this.ensureTranscriptionUnsubscribed();
-    } else {
-      // Normal mode: always subscribe
-      this.ensureTranscriptionSubscribed();
-    }
+    // ALWAYS SUBSCRIBE - DEBUGGING ISSUE
+    this.ensureTranscriptionSubscribed();
+    // const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
+    // if (requireHeadUpWindow) {
+    //   // Start unsubscribed; will subscribe on head-up
+    //   this.ensureTranscriptionUnsubscribed();
+    // } else {
+    //   // Normal mode: always subscribe
+    //   this.ensureTranscriptionSubscribed();
+    // }
   }
 
   private async getPhoto(): Promise<PhotoData | null> {
@@ -451,8 +459,16 @@ class TranscriptionManager {
 
   /**
    * Process and respond to the user's query
+   * 
+   * 
    */
+  //todo : provide more timestamps from here to the final response form the ai  
+  // check if the the processQuery is being called all the time? and does it display in all cases 
+  // when mira bbreaks and fails to display anything. determine if this function was called or not.
   private async processQuery(rawText: string, timerDuration: number): Promise<void> {
+    const anim = new Anim(this.session); 
+  
+    logger.debug("processQuery called ");
     // Calculate the actual duration from transcriptionStartTime to now
     const endTime = Date.now();
     let durationSeconds = 3; // fallback default
@@ -484,17 +500,18 @@ class TranscriptionManager {
       if (!responseText || responseText.trim() === '') {
         throw new Error('Empty response body received');
       }
+      
 
       try {
         transcriptionResponse = JSON.parse(responseText);
       } catch (jsonError) {
         this.logger.error(jsonError, `[Session ${this.sessionId}]: JSON parsing failed:`);
         this.logger.error({ responseText }, `[Session ${this.sessionId}]: Response text that failed to parse: ${responseText}`);
-        throw new Error(`Failed to parse JSON response: ${jsonError.message}`);
+        throw new Error(`Failed to parse JSON response`);
       }
 
     } catch (fetchError) {
-      this.logger.error(fetchError, `[Session ${this.sessionId}]: Error fetching transcript:` + fetchError.message);
+      this.logger.error(fetchError, `[Session ${this.sessionId}]: Error fetching transcript:`);
       this.session.layouts.showTextWall(
         wrapText("Sorry, there was an error retrieving your transcript. Please try again.", 30),
         { durationMs: 5000 }
@@ -562,6 +579,7 @@ class TranscriptionManager {
       if (displayQuery.length > 60) {
         displayQuery = displayQuery.slice(0, 60).trim() + ' ...';
       }
+      anim.start("Processing query: " + displayQuery); // animiation stop
       this.session.layouts.showTextWall(
         wrapText("Processing query: " + displayQuery, 30),
         { durationMs: 8000 }
@@ -571,6 +589,7 @@ class TranscriptionManager {
       const inputData = { query, photo: await this.getPhoto() };
       const agentResponse = await this.miraAgent.handleContext(inputData);
 
+      anim.stop(); // animiation stop
       isRunning = false;
 
       if (!agentResponse) {
@@ -605,6 +624,7 @@ class TranscriptionManager {
         }
       }
     } catch (error) {
+      anim.stop();
       logger.error(error, `[Session ${this.sessionId}]: Error processing query:`);
       this.showOrSpeakText("Sorry, there was an error processing your request.");
     } finally {
@@ -623,11 +643,11 @@ class TranscriptionManager {
 
       // Reset listening state
       this.isListeningToQuery = false;
-      // If head-up window mode is on and there is no active window, unsubscribe to save battery
-      const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
-      if (requireHeadUpWindow && Date.now() > this.headWakeWindowUntilMs) {
-        this.ensureTranscriptionUnsubscribed();
-      }
+      // ALWAYS STAY SUBSCRIBED - DEBUGGING ISSUE
+      // const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
+      // if (requireHeadUpWindow && Date.now() > this.headWakeWindowUntilMs) {
+      //   this.ensureTranscriptionUnsubscribed();
+      // }
 
       // Clear transcript processor for next query
       this.transcriptProcessor.clear();
@@ -673,13 +693,15 @@ class TranscriptionManager {
    * Unsubscribe from transcriptions to save battery when not needed.
    */
   public ensureTranscriptionUnsubscribed(): void {
-    if (this.transcriptionUnsubscribe && !this.isListeningToQuery) {
-      try {
-        this.transcriptionUnsubscribe();
-      } finally {
-        this.transcriptionUnsubscribe = undefined;
-      }
-    }
+    // NEVER UNSUBSCRIBE - DEBUGGING ISSUE
+    return;
+    // if (this.transcriptionUnsubscribe && !this.isListeningToQuery) {
+    //   try {
+    //     this.transcriptionUnsubscribe();
+    //   } finally {
+    //     this.transcriptionUnsubscribe = undefined;
+    //   }
+    // }
   }
 
   /**

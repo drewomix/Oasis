@@ -1,6 +1,10 @@
 import { StructuredTool } from '@langchain/core/tools';
 import axios from 'axios';
 import { z } from 'zod';
+import {
+  logger as _logger
+} from '@mentra/sdk';
+import { stringify } from 'querystring';
 
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
@@ -42,6 +46,9 @@ export class TpaListAppsTool extends StructuredTool {
   }
 
   async _call(input: { includeRunning?: boolean }): Promise<string> {
+
+    const logger = _logger.child({app: PACKAGE_NAME});
+    logger.debug("[TpaCommandsTool.ts] Running...")
     console.log("TpaListAppsTool Input:", input);
     try {
       const apps = await this.getAllApps();
@@ -57,6 +64,7 @@ export class TpaListAppsTool extends StructuredTool {
         }));
         result = JSON.stringify(simplifiedApps, null, 2);
       }
+      console.log(`[TpaListAppsTool] Fetched apps:`, JSON.stringify(apps, null, 2));
       console.log(`[TpaListAppsTool] Returning to LLM:`, result);
       return result;
     } catch (error) {
@@ -66,18 +74,18 @@ export class TpaListAppsTool extends StructuredTool {
     }
   }
 
-  private async getAllApps(): Promise<AppInfo[]> {
+  public async getAllApps(): Promise<AppInfo[]> {
     try {
       // Use the correct API endpoint from the routes file
       const url = `${this.cloudUrl}/api/apps?apiKey=${AUGMENTOS_API_KEY}&packageName=${PACKAGE_NAME}&userId=${this.userId}`;
-      // console.log(`[TpaListAppsTool] Fetching apps from URL: ${url}`);
-      // console.log(`[TpaListAppsTool] API Key: ${AUGMENTOS_API_KEY ? 'Present' : 'Missing'}`);
-      // console.log(`[TpaListAppsTool] Package Name: ${PACKAGE_NAME}`);
-      // console.log(`[TpaListAppsTool] User ID: ${this.userId}`);
-      
+      console.log(`[TpaListAppsTool] Fetching apps from URL: ${url}`);
+      console.log(`[TpaListAppsTool] API Key: ${AUGMENTOS_API_KEY ? 'Present' : 'Missing'}`);
+      console.log(`[TpaListAppsTool] Package Name: ${PACKAGE_NAME}`);
+      console.log(`[TpaListAppsTool] User ID: ${this.userId}`);
+
       const response = await axios.get(url);
-      // console.log(`[TpaListAppsTool] API Response status: ${response.status}`);
-      // console.log(`[TpaListAppsTool] API Response data:`, JSON.stringify(response.data, null, 2));
+      console.log(`[TpaListAppsTool] API Response status: ${response.status}`);
+      console.log(`[TpaListAppsTool] API Response data:`, JSON.stringify(response.data, null, 2));
 
       // Check if the response has the expected structure
       if (!response.data || !response.data.success) {
@@ -87,7 +95,7 @@ export class TpaListAppsTool extends StructuredTool {
 
       // Extract app data from the response
       const apps = response.data.data || [];
-      // console.log(`[TpaListAppsTool] Found ${apps.length} apps in response`);
+      console.log(`[TpaListAppsTool] Found ${apps.length} apps in response`);
 
       // Extract only the fields we need
       const processedApps = apps.map((app: any) => ({
@@ -97,8 +105,8 @@ export class TpaListAppsTool extends StructuredTool {
         is_running: !!app.is_running,
         is_foreground: !!app.is_foreground
       }));
-      
-      // console.log(`[TpaListAppsTool] Processed apps:`, JSON.stringify(processedApps, null, 2));
+
+      console.log(`[TpaListAppsTool] Processed apps:`, JSON.stringify(processedApps, null, 2));
       return processedApps;
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -168,4 +176,6 @@ export class TpaCommandsTool extends StructuredTool {
       return `Unknown error while trying to ${action} app: ${error}`;
     }
   }
+
+ 
 }
