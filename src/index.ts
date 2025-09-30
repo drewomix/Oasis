@@ -31,6 +31,7 @@ logger.info(`🚀🚀🚀 Starting ${PACKAGE_NAME} server on port ${PORT}... �
 
 // Wake words that trigger Mira
 const explicitWakeWords = [
+  "hey slack",
   "hey mira", "he mira", "hey mara", "he mara", "hey mirror", "he mirror",
   "hey miara", "he miara", "hey mia", "he mia", "hey mural", "he mural",
   "hey amira", "hey myra", "he myra", "hay mira", "hai mira", "hey-mira",
@@ -311,15 +312,15 @@ class TranscriptionManager {
         this.logger.debug({ until: this.headWakeWindowUntilMs }, 'Head up detected: wake window opened for 10s');
         // Subscribe to transcriptions to listen for wake word during the window
         this.ensureTranscriptionSubscribed();
-        // Stop listening after 10s if wake word not spoken
+        // ALWAYS STAY SUBSCRIBED - DEBUGGING ISSUE
         if (this.headWindowTimeoutId) {
           clearTimeout(this.headWindowTimeoutId);
         }
         this.headWindowTimeoutId = setTimeout(() => {
-          if (!this.isListeningToQuery) {
-            this.logger.debug('Head-up window expired without wake word; unsubscribing from transcriptions');
-            this.ensureTranscriptionUnsubscribed();
-          }
+          // if (!this.isListeningToQuery) {
+          //   this.logger.debug('Head-up window expired without wake word; unsubscribing from transcriptions');
+          //   this.ensureTranscriptionUnsubscribed();
+          // }
           this.headWakeWindowUntilMs = 0;
           this.headWindowTimeoutId = undefined;
         }, 10_000);
@@ -335,14 +336,16 @@ class TranscriptionManager {
    * Initialize subscription state based on the current setting.
    */
   public initTranscriptionSubscription(): void {
-    const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
-    if (requireHeadUpWindow) {
-      // Start unsubscribed; will subscribe on head-up
-      this.ensureTranscriptionUnsubscribed();
-    } else {
-      // Normal mode: always subscribe
-      this.ensureTranscriptionSubscribed();
-    }
+    // ALWAYS SUBSCRIBE - DEBUGGING ISSUE
+    this.ensureTranscriptionSubscribed();
+    // const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
+    // if (requireHeadUpWindow) {
+    //   // Start unsubscribed; will subscribe on head-up
+    //   this.ensureTranscriptionUnsubscribed();
+    // } else {
+    //   // Normal mode: always subscribe
+    //   this.ensureTranscriptionSubscribed();
+    // }
   }
 
   private async getPhoto(): Promise<PhotoData | null> {
@@ -635,11 +638,11 @@ class TranscriptionManager {
 
       // Reset listening state
       this.isListeningToQuery = false;
-      // If head-up window mode is on and there is no active window, unsubscribe to save battery
-      const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
-      if (requireHeadUpWindow && Date.now() > this.headWakeWindowUntilMs) {
-        this.ensureTranscriptionUnsubscribed();
-      }
+      // ALWAYS STAY SUBSCRIBED - DEBUGGING ISSUE
+      // const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
+      // if (requireHeadUpWindow && Date.now() > this.headWakeWindowUntilMs) {
+      //   this.ensureTranscriptionUnsubscribed();
+      // }
 
       // Clear transcript processor for next query
       this.transcriptProcessor.clear();
@@ -685,13 +688,15 @@ class TranscriptionManager {
    * Unsubscribe from transcriptions to save battery when not needed.
    */
   public ensureTranscriptionUnsubscribed(): void {
-    if (this.transcriptionUnsubscribe && !this.isListeningToQuery) {
-      try {
-        this.transcriptionUnsubscribe();
-      } finally {
-        this.transcriptionUnsubscribe = undefined;
-      }
-    }
+    // NEVER UNSUBSCRIBE - DEBUGGING ISSUE
+    return;
+    // if (this.transcriptionUnsubscribe && !this.isListeningToQuery) {
+    //   try {
+    //     this.transcriptionUnsubscribe();
+    //   } finally {
+    //     this.transcriptionUnsubscribe = undefined;
+    //   }
+    // }
   }
 
   /**
