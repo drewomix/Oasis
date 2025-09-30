@@ -490,11 +490,11 @@ class TranscriptionManager {
       } catch (jsonError) {
         this.logger.error(jsonError, `[Session ${this.sessionId}]: JSON parsing failed:`);
         this.logger.error({ responseText }, `[Session ${this.sessionId}]: Response text that failed to parse: ${responseText}`);
-        throw new Error(`Failed to parse JSON response: ${jsonError.message}`);
+        throw new Error(`Failed to parse JSON response: ${jsonError}`);
       }
 
     } catch (fetchError) {
-      this.logger.error(fetchError, `[Session ${this.sessionId}]: Error fetching transcript:` + fetchError.message);
+      this.logger.error(fetchError, `[Session ${this.sessionId}]: Error fetching transcript:` + fetchError);
       this.session.layouts.showTextWall(
         wrapText("Sorry, there was an error retrieving your transcript. Please try again.", 30),
         { durationMs: 5000 }

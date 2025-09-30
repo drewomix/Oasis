@@ -102,7 +102,7 @@ export class SmartAppControlTool extends StructuredTool {
     }
     
     // Default to start if no clear action is found but there's app-related language
-    if (request.includes('app') || request.match(/\b(camera|instagram|youtube|spotify|netflix|mira)\b/i)) {
+    if (request.includes('app') || request.match(/\b(mira)\b/i)) {
       return 'start';
     }
     

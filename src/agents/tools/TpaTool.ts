@@ -1,6 +1,6 @@
 import { DynamicStructuredTool, DynamicTool, StructuredTool, tool, Tool } from '@langchain/core/tools';
 import { z } from "zod";
-import { AppI, ToolSchema, ToolCall } from '@augmentos/sdk';
+import { AppI, ToolSchema, ToolCall } from '@mentra/sdk';
 import axios, { AxiosError } from 'axios';
 
 
