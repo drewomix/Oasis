@@ -32,7 +32,6 @@ logger.info(`🚀🚀🚀 Starting ${PACKAGE_NAME} server on port ${PORT}... �
 
 // Wake words that trigger Mira
 const explicitWakeWords = [
-  "hey slack",
   "hey mira", "he mira", "hey mara", "he mara", "hey mirror", "he mirror",
   "hey miara", "he miara", "hey mia", "he mia", "hey mural", "he mural",
   "hey amira", "hey myra", "he myra", "hay mira", "hai mira", "hey-mira",
