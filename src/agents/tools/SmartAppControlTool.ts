@@ -67,13 +67,8 @@ export class SmartAppControlTool extends StructuredTool {
         packageName: appMatch.packageName
       });
 
-      // Enhance the result message with the app name
-      if (actionResult.includes("Successfully")) {
-        const actionWord = action === 'start' ? 'opened' : 'closed';
-        return `Successfully ${actionWord} ${appMatch.name}${confidenceMessage}`;
-      } else {
-        return `${actionResult}${confidenceMessage}`;
-      }
+      // Return the original result with confidence message if needed
+      return `${actionResult}${confidenceMessage}`;
 
     } catch (error) {
       console.error("[SmartAppControl] Error:", error);
@@ -102,7 +97,7 @@ export class SmartAppControlTool extends StructuredTool {
     }
     
     // Default to start if no clear action is found but there's app-related language
-    if (request.includes('app') || request.match(/\b(mira)\b/i)) {
+    if (request.includes('app')) {
       return 'start';
     }
     

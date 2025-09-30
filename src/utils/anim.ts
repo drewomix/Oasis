@@ -64,14 +64,24 @@ export class Anim {
   /**
    * Stops the animation immediately
    *
-   * Clears the interval timer and sets the stopped flag to prevent
-   * further animation frames from being displayed.
+   * Clears the interval timer, sets the stopped flag to prevent
+   * further animation frames from being displayed, and clears
+   * the display to prevent the last frame from remaining visible.
    */
   stop(): void {
     this.stopped = true;
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = undefined;
+    }
+
+    // Clear the display to prevent last frame from staying visible
+    try {
+      if ((this.session as any).ws?.readyState === 1) {
+        this.session.layouts.showTextWall("");
+      }
+    } catch (error) {
+      // Silently handle cases where session is no longer available
     }
   }
 
