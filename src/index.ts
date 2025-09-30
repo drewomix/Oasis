@@ -9,6 +9,7 @@ import { MiraAgent } from './agents';
 import { wrapText, TranscriptProcessor } from './utils';
 import { getAllToolsForUser } from './agents/tools/TpaTool';
 import { log } from 'console';
+import { Anim } from './utils/anim';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
@@ -466,6 +467,8 @@ class TranscriptionManager {
   // check if the the processQuery is being called all the time? and does it display in all cases 
   // when mira bbreaks and fails to display anything. determine if this function was called or not.
   private async processQuery(rawText: string, timerDuration: number): Promise<void> {
+    // const anim = new Anim(this.session); 
+  
     logger.debug("processQuery called ");
     // Calculate the actual duration from transcriptionStartTime to now
     const endTime = Date.now();
@@ -577,6 +580,7 @@ class TranscriptionManager {
       if (displayQuery.length > 60) {
         displayQuery = displayQuery.slice(0, 60).trim() + ' ...';
       }
+      // anim.start("Processing query: " + displayQuery); // animiation stop
       this.session.layouts.showTextWall(
         wrapText("Processing query: " + displayQuery, 30),
         { durationMs: 8000 }
@@ -586,6 +590,7 @@ class TranscriptionManager {
       const inputData = { query, photo: await this.getPhoto() };
       const agentResponse = await this.miraAgent.handleContext(inputData);
 
+      // anim.stop(); // animiation stop
       isRunning = false;
 
       if (!agentResponse) {
@@ -620,6 +625,7 @@ class TranscriptionManager {
         }
       }
     } catch (error) {
+      // anim.stop();
       logger.error(error, `[Session ${this.sessionId}]: Error processing query:`);
       this.showOrSpeakText("Sorry, there was an error processing your request.");
     } finally {
