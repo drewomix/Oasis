@@ -78,14 +78,14 @@ export class TpaListAppsTool extends StructuredTool {
     try {
       // Use the correct API endpoint from the routes file
       const url = `${this.cloudUrl}/api/apps?apiKey=${AUGMENTOS_API_KEY}&packageName=${PACKAGE_NAME}&userId=${this.userId}`;
-      // console.log(`[TpaListAppsTool] Fetching apps from URL: ${url}`);
-      // console.log(`[TpaListAppsTool] API Key: ${AUGMENTOS_API_KEY ? 'Present' : 'Missing'}`);
-      // console.log(`[TpaListAppsTool] Package Name: ${PACKAGE_NAME}`);
-      // console.log(`[TpaListAppsTool] User ID: ${this.userId}`);
-      
+      console.log(`[TpaListAppsTool] Fetching apps from URL: ${url}`);
+      console.log(`[TpaListAppsTool] API Key: ${AUGMENTOS_API_KEY ? 'Present' : 'Missing'}`);
+      console.log(`[TpaListAppsTool] Package Name: ${PACKAGE_NAME}`);
+      console.log(`[TpaListAppsTool] User ID: ${this.userId}`);
+
       const response = await axios.get(url);
-      // console.log(`[TpaListAppsTool] API Response status: ${response.status}`);
-      // console.log(`[TpaListAppsTool] API Response data:`, JSON.stringify(response.data, null, 2));
+      console.log(`[TpaListAppsTool] API Response status: ${response.status}`);
+      console.log(`[TpaListAppsTool] API Response data:`, JSON.stringify(response.data, null, 2));
 
       // Check if the response has the expected structure
       if (!response.data || !response.data.success) {
@@ -95,7 +95,7 @@ export class TpaListAppsTool extends StructuredTool {
 
       // Extract app data from the response
       const apps = response.data.data || [];
-      // console.log(`[TpaListAppsTool] Found ${apps.length} apps in response`);
+      console.log(`[TpaListAppsTool] Found ${apps.length} apps in response`);
 
       // Extract only the fields we need
       const processedApps = apps.map((app: any) => ({
@@ -105,8 +105,8 @@ export class TpaListAppsTool extends StructuredTool {
         is_running: !!app.is_running,
         is_foreground: !!app.is_foreground
       }));
-      
-      // console.log(`[TpaListAppsTool] Processed apps:`, JSON.stringify(processedApps, null, 2));
+
+      console.log(`[TpaListAppsTool] Processed apps:`, JSON.stringify(processedApps, null, 2));
       return processedApps;
     } catch (error) {
       if (axios.isAxiosError(error)) {
