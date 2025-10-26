@@ -15,7 +15,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
 const LOCATIONIQ_TOKEN = process.env.LOCATIONIQ_TOKEN;
-const ALWAYS_LISTENING = process.env.ALWAYS_LISTENING === 'true';
+const ALWAYS_LISTENING = process.env.ALWAYS_LISTENING !== 'false';
 
 const PROCESSING_SOUND_URL = "https://mira.augmentos.cloud/popping.mp3";
 const START_LISTENING_SOUND_URL = "https://mira.augmentos.cloud/start.mp3";
