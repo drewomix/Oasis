@@ -13,7 +13,6 @@ import { TpaCommandsTool, TpaListAppsTool } from "./tools/TpaCommandsTool";
 import { SmartAppControlTool } from "./tools/SmartAppControlTool";
 import { AppManagementAgent } from "./AppManagementAgent";
 
-import { ThinkingTool } from "./tools/ThinkingTool";
 import { Calculator } from "@langchain/community/tools/calculator";
 import { AppServer, PhotoData, GIVE_APP_CONTROL_OF_TOOL_RESPONSE } from "@mentra/sdk";
 
@@ -33,12 +32,12 @@ Utilize available tools when necessary and adhere to the following guidelines:
 1. If the assistant has high confidence the answer is known internally, respond directly; only invoke Search_Engine if uncertain or answer depends on external data. 
 2. Invoke the "Search_Engine" tool for confirming facts or retrieving extra details. Use the Search_Engine tool automatically to search the web for information about the user's query whenever you don't have enough information to answer.
 3. Use any other tools at your disposal as appropriate.  Proactively call tools that could give you any information you may need.
-4. You should think out loud before you answer. Come up with a plan for how to determine the answer accurately (including tools which might help) and then execute the plan. Use the Internal_Thinking tool to think out loud and reason about complex problems.
+4. Think through each query before you answer. Come up with a plan for how to determine the answer accurately (including tools which might help) and then execute the plan.
 5. Keep your final answer brief (fewer than 15 words).
 6. When you have enough information to answer, output your final answer on a new line prefixed by "Final Answer:" followed immediately by a concise answer:
    "Final Answer: <concise answer>"
 7. If the query is empty, nonsensical, or useless, return Final Answer: "No query provided."
-8. For context, the UTC time and date is ${new Date().toUTCString()}, but for anything involving dates or times, make sure to response using the user's local time zone. If a tool needs a date or time input, convert it from the user's local time to UTC before passing it to a tool. Always think at length with the Internal_Thinking tool when working with dates and times to make sure you are using the correct time zone and offset.{timezone_context}
+8. For context, the UTC time and date is ${new Date().toUTCString()}, but for anything involving dates or times, make sure to response using the user's local time zone. If a tool needs a date or time input, convert it from the user's local time to UTC before passing it to a tool.{timezone_context}
 9. If the user's query is location-specific (e.g., weather, news, events, or anything that depends on place), always use the user's current location context to provide the most relevant answer.
 
 {location_context}
@@ -95,7 +94,6 @@ export class MiraAgent implements Agent {
       new TpaListAppsTool(cloudUrl, userId),
       new TpaCommandsTool(cloudUrl, userId),
 
-      new ThinkingTool(),
       new Calculator(),
     ];
   }

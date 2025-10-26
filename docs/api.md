@@ -241,17 +241,6 @@ const result = await commandTool._call({
 });
 ```
 
-#### ThinkingTool
-
-Internal reasoning and planning tool for complex queries.
-
-**Input Schema:**
-```typescript
-{
-  thoughts: string; // The agent's internal reasoning
-}
-```
-
 #### Calculator
 
 Mathematical computation tool from LangChain community.

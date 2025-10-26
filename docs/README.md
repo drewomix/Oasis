@@ -64,7 +64,6 @@ The system uses a flexible agent-based architecture where:
 Built-in tools include:
 - **SearchToolForAgents** - Web search capabilities
 - **TpaCommandsTool** - Third-party app interactions
-- **ThinkingTool** - Internal reasoning and planning
 - **Calculator** - Mathematical computations
 
 ## Technology Stack
