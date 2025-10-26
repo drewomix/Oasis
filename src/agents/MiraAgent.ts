@@ -215,6 +215,17 @@ export class MiraAgent implements Agent {
 
   public async handleContext(userContext: Record<string, any>): Promise<any> {
     try {
+      // Reset the message history for every new request. We intentionally keep
+      // the memory external to the agent (via transcript/insight history)
+      // instead of reusing the previous LangChain messages. Reusing the raw
+      // message objects caused subsequent requests to see multiple system
+      // prompts and tool descriptions, which the LLM occasionally echoed back
+      // to the user (e.g. responding with tool activation hints like
+      // "start_recording" instructions). Clearing the array prevents those
+      // prompts from accumulating while still allowing higher level context to
+      // be injected explicitly when needed.
+      this.messages = [];
+
       // Extract required fields from the userContext.
       const transcriptHistory = userContext.transcript_history || "";
       const insightHistory = userContext.insight_history || "";
