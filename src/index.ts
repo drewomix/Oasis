@@ -1,4 +1,5 @@
 import path from 'path';
+import { PromptTemplate } from '@langchain/core/prompts';
 import {
   AppSession,
   AppServer, PhotoData,
@@ -6,9 +7,8 @@ import {
   logger as _logger
 } from '@mentra/sdk';
 import { MiraAgent } from './agents';
-import { wrapText, TranscriptProcessor } from './utils';
+import { wrapText, TranscriptProcessor, LLMProvider } from './utils';
 import { getAllToolsForUser } from './agents/tools/TpaTool';
-import { log } from 'console';
 import { Anim } from './utils/anim';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
@@ -19,6 +19,35 @@ const ALWAYS_LISTENING = process.env.ALWAYS_LISTENING !== 'false';
 
 const PROCESSING_SOUND_URL = "https://mira.augmentos.cloud/popping.mp3";
 const START_LISTENING_SOUND_URL = "https://mira.augmentos.cloud/start.mp3";
+
+interface ProactiveDecision {
+  shouldRespond: boolean;
+  trigger: string;
+  reason: string;
+  confidence: number;
+}
+
+const PROACTIVE_LISTENER_PROMPT = `You review smart-glasses microphone transcripts to decide whether Mira should speak up.
+
+Return **only** a JSON object with these keys:
+- "should_respond": true or false
+- "trigger": one of ["direct_request", "fact_check", "helpful_context", "safety", "notification", "fallback"]
+- "confidence": a number from 0 to 1
+- "reason": a short phrase explaining why
+
+Mira is always listening but should only reply when she can add meaningful value:
+1. Someone clearly addresses Mira or asks for help/information.
+2. A statement needs fact-checking or clarification to prevent misinformation.
+3. She can proactively surface urgent, safety-critical, or time-sensitive guidance.
+4. Staying silent would cause the user to miss relevant information from their assistant or environment.
+
+For casual chatter, private conversation, or noise, respond with should_respond = false. When unsure, lean toward silence.
+
+Recent transcript window:
+{recent_transcript}
+
+Latest utterance under review:
+{latest_utterance}`;
 
 if (!AUGMENTOS_API_KEY) {
   throw new Error('AUGMENTOS_API_KEY is not set');
@@ -468,11 +497,120 @@ class TranscriptionManager {
   }
 
   /**
-   * Process and respond to the user's query
-   * 
-   * 
+   * Decide if Mira should respond while in always-listening mode.
    */
-  //todo : provide more timestamps from here to the final response form the ai  
+  private async shouldRespondToAmbientSpeech(query: string, segments: any[]): Promise<ProactiveDecision> {
+    const fallbackDecision: ProactiveDecision = {
+      shouldRespond: true,
+      trigger: 'fallback',
+      reason: 'Fallback allowance to avoid missing potential requests.',
+      confidence: 0,
+    };
+
+    try {
+      const contextWindow = Array.isArray(segments) && segments.length > 0
+        ? segments.slice(-6).map((segment: any, index: number) => {
+            const speaker = typeof segment.speaker === 'string'
+              ? segment.speaker
+              : typeof segment.role === 'string'
+                ? segment.role
+                : `utterance_${index + 1}`;
+            const text = typeof segment.text === 'string'
+              ? segment.text
+              : segment?.content && typeof segment.content === 'string'
+                ? segment.content
+                : JSON.stringify(segment);
+            return `${speaker}: ${text}`;
+          }).join('\n')
+        : query;
+
+      const prompt = new PromptTemplate({
+        template: PROACTIVE_LISTENER_PROMPT,
+        inputVariables: ['recent_transcript', 'latest_utterance'],
+      });
+
+      const formattedPrompt = await prompt.format({
+        recent_transcript: contextWindow || '(no prior context)',
+        latest_utterance: query.trim() || '(empty)',
+      });
+
+      const llm = LLMProvider.getLLM();
+      const response = await llm.invoke(formattedPrompt);
+      const rawContent = typeof response.content === 'string'
+        ? response.content
+        : Array.isArray(response.content)
+          ? response.content.map((part: any) => {
+              if (typeof part === 'string') {
+                return part;
+              }
+              if (part?.type === 'text' && typeof part.text === 'string') {
+                return part.text;
+              }
+              return '';
+            }).join('')
+          : String(response.content ?? '');
+
+      let jsonText = rawContent.trim();
+      if (jsonText.startsWith('```')) {
+        const firstLineBreak = jsonText.indexOf('\n');
+        if (firstLineBreak !== -1) {
+          jsonText = jsonText.substring(firstLineBreak + 1).trim();
+        }
+        if (jsonText.endsWith('```')) {
+          jsonText = jsonText.substring(0, jsonText.length - 3).trim();
+        }
+      }
+
+      const parsed = JSON.parse(jsonText);
+      const shouldRespondRaw = parsed.should_respond ?? parsed.shouldRespond ?? parsed.respond;
+      const triggerRaw = parsed.trigger;
+      const confidenceRaw = parsed.confidence;
+      const reasonRaw = parsed.reason;
+
+      const shouldRespond = typeof shouldRespondRaw === 'boolean'
+        ? shouldRespondRaw
+        : typeof shouldRespondRaw === 'string'
+          ? shouldRespondRaw.toLowerCase() === 'true'
+          : fallbackDecision.shouldRespond;
+
+      const trigger = typeof triggerRaw === 'string' && triggerRaw.trim().length > 0
+        ? triggerRaw.trim()
+        : fallbackDecision.trigger;
+
+      const parsedConfidence = typeof confidenceRaw === 'number'
+        ? confidenceRaw
+        : typeof confidenceRaw === 'string'
+          ? parseFloat(confidenceRaw)
+          : fallbackDecision.confidence;
+      const confidence = Number.isFinite(parsedConfidence)
+        ? Math.max(0, Math.min(1, parsedConfidence))
+        : fallbackDecision.confidence;
+
+      const reason = typeof reasonRaw === 'string' && reasonRaw.trim().length > 0
+        ? reasonRaw.trim()
+        : fallbackDecision.reason;
+
+      const decision: ProactiveDecision = {
+        shouldRespond,
+        trigger,
+        reason,
+        confidence,
+      };
+
+      this.logger.debug({ decision, query }, `[Session ${this.sessionId}]: Proactive response gate decision.`);
+      return decision;
+    } catch (error) {
+      this.logger.warn(error as Error, `[Session ${this.sessionId}]: Proactive response gate failed; defaulting to respond.`);
+      return fallbackDecision;
+    }
+  }
+
+  /**
+   * Process and respond to the user's query
+   *
+   *
+   */
+  //todo : provide more timestamps from here to the final response form the ai
   // check if the the processQuery is being called all the time? and does it display in all cases 
   // when mira bbreaks and fails to display anything. determine if this function was called or not.
   private async processQuery(rawText: string, timerDuration: number): Promise<void> {
@@ -547,21 +685,45 @@ class TranscriptionManager {
 
     this.isProcessingQuery = true;
 
+    const wakeWordRequired = this.isWakeWordRequired();
     let isRunning = true;
 
-    // Remove wake word from query
-    const query = this.isWakeWordRequired()
+    // Remove wake word from query when required
+    const query = wakeWordRequired
       ? this.removeWakeWord(rawCombinedText)
       : rawCombinedText.trim();
 
     if (query.trim().length === 0) {
       isRunning = false;
-      this.session.layouts.showTextWall(
-        wrapText("No query provided.", 30),
-        { durationMs: 5000 }
-      );
-      this.isProcessingQuery = false;
+      if (wakeWordRequired) {
+        this.session.layouts.showTextWall(
+          wrapText("No query provided.", 30),
+          { durationMs: 5000 }
+        );
+        this.resetListeningState(0);
+      } else {
+        this.logger.debug(`[Session ${this.sessionId}]: Ambient speech ignored because it contained no actionable text.`);
+        this.resetListeningState(0);
+      }
       return;
+    }
+
+    let proactiveMetadata: { trigger: string; reason: string } = {
+      trigger: 'direct_invocation',
+      reason: 'User explicitly invoked Mira with a wake word or direct request.',
+    };
+
+    if (!wakeWordRequired) {
+      const decision = await this.shouldRespondToAmbientSpeech(rawCombinedText.trim(), transcriptionResponse.segments);
+      if (!decision.shouldRespond) {
+        this.logger.info({ decision, query }, `[Session ${this.sessionId}]: Proactive gate suppressed response.`);
+        this.resetListeningState(0);
+        return;
+      }
+      proactiveMetadata = {
+        trigger: decision.trigger || 'ambient_assist',
+        reason: decision.reason || 'Assistant determined a proactive response would add value.',
+      };
     }
 
     const hasScreenProcessing = this.session.capabilities?.hasDisplay;
@@ -598,7 +760,14 @@ class TranscriptionManager {
       );
 
       // Process the query with the Mira agent
-      const inputData = { query, photo: await this.getPhoto() };
+      const notifications = notificationsManager.getLatestNotifications(this.userId, 5);
+      const inputData = {
+        query,
+        photo: await this.getPhoto(),
+        notifications,
+        proactive_context: proactiveMetadata.reason,
+        proactive_trigger: proactiveMetadata.trigger,
+      };
       const agentResponse = await this.miraAgent.handleContext(inputData);
 
       anim.stop(); // animiation stop
@@ -640,34 +809,7 @@ class TranscriptionManager {
       logger.error(error, `[Session ${this.sessionId}]: Error processing query:`);
       this.showOrSpeakText("Sorry, there was an error processing your request.");
     } finally {
-      // Reset the state for future queries
-      this.transcriptionStartTime = 0;
-      if (this.timeoutId) {
-        clearTimeout(this.timeoutId);
-        this.timeoutId = undefined;
-      }
-
-      // Clear the maximum listening timer
-      if (this.maxListeningTimeoutId) {
-        clearTimeout(this.maxListeningTimeoutId);
-        this.maxListeningTimeoutId = undefined;
-      }
-
-      // Reset listening state
-      this.isListeningToQuery = false;
-      // ALWAYS STAY SUBSCRIBED - DEBUGGING ISSUE
-      // const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
-      // if (requireHeadUpWindow && Date.now() > this.headWakeWindowUntilMs) {
-      //   this.ensureTranscriptionUnsubscribed();
-      // }
-
-      // Clear transcript processor for next query
-      this.transcriptProcessor.clear();
-
-      // Reset processing state after a delay
-      setTimeout(() => {
-        this.isProcessingQuery = false;
-      }, 2000);
+      this.resetListeningState(2000);
     }
   }
 
@@ -762,6 +904,33 @@ class TranscriptionManager {
       return !alwaysListeningSetting;
     }
     return !this.alwaysListeningDefault;
+  }
+
+  /**
+   * Reset timers and state after finishing or skipping a query.
+   */
+  private resetListeningState(delayMs: number): void {
+    this.transcriptionStartTime = 0;
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = undefined;
+    }
+
+    if (this.maxListeningTimeoutId) {
+      clearTimeout(this.maxListeningTimeoutId);
+      this.maxListeningTimeoutId = undefined;
+    }
+
+    this.isListeningToQuery = false;
+    this.transcriptProcessor.clear();
+
+    if (delayMs > 0) {
+      setTimeout(() => {
+        this.isProcessingQuery = false;
+      }, delayMs);
+    } else {
+      this.isProcessingQuery = false;
+    }
   }
 
   /**
