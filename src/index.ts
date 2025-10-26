@@ -15,6 +15,7 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT) : 80;
 const PACKAGE_NAME = process.env.PACKAGE_NAME;
 const AUGMENTOS_API_KEY = process.env.AUGMENTOS_API_KEY;
 const LOCATIONIQ_TOKEN = process.env.LOCATIONIQ_TOKEN;
+const ALWAYS_LISTENING = process.env.ALWAYS_LISTENING === 'true';
 
 const PROCESSING_SOUND_URL = "https://mira.augmentos.cloud/popping.mp3";
 const START_LISTENING_SOUND_URL = "https://mira.augmentos.cloud/start.mp3";
@@ -95,6 +96,7 @@ class TranscriptionManager {
   private transcriptProcessor: TranscriptProcessor;
   private activePhotos: Map<string, { promise: Promise<PhotoData>, photoData: PhotoData | null, lastPhotoTime: number }> = new Map();
   private logger: AppSession['logger'];
+  private readonly alwaysListeningDefault: boolean;
 
     /**
      * Tracks the last observed head position and a time window during which
@@ -106,7 +108,7 @@ class TranscriptionManager {
     private transcriptionUnsubscribe?: () => void;
     private headWindowTimeoutId?: NodeJS.Timeout;
 
-  constructor(session: AppSession, sessionId: string, userId: string, miraAgent: MiraAgent, serverUrl: string) {
+  constructor(session: AppSession, sessionId: string, userId: string, miraAgent: MiraAgent, serverUrl: string, alwaysListeningDefault: boolean) {
     this.session = session;
     this.sessionId = sessionId;
     this.userId = userId;
@@ -115,6 +117,7 @@ class TranscriptionManager {
     // Use same settings as LiveCaptions for now
     this.transcriptProcessor = new TranscriptProcessor(30, 3, 3, false);
     this.logger = session.logger.child({ service: 'Mira.TranscriptionManager' });
+    this.alwaysListeningDefault = alwaysListeningDefault;
     // Initialize subscription state based on setting
     this.initTranscriptionSubscription();
   }
@@ -137,6 +140,7 @@ class TranscriptionManager {
       .replace(/\s+/g, ' ')     // normalize whitespace
       .trim();
     const hasWakeWord = explicitWakeWords.some(word => cleanedText.includes(word));
+    const wakeWordRequired = this.isWakeWordRequired();
 
       // Optional setting: only allow wake word within 10s after head moves down->up
       const requireHeadUpWindow = !!this.session.settings.get<boolean>('wake_requires_head_up');
@@ -145,12 +149,18 @@ class TranscriptionManager {
 
       // Gate wake word if the optional mode is enabled
       if (!this.isListeningToQuery) {
-        if (!hasWakeWord) {
-          return;
-        }
-        if (requireHeadUpWindow && !withinHeadWindow) {
-          // Wake word was spoken but not within the head-up window; ignore
-          this.logger.debug('Wake word ignored: outside head-up activation window');
+        if (wakeWordRequired) {
+          if (!hasWakeWord) {
+            return;
+          }
+          if (requireHeadUpWindow && !withinHeadWindow) {
+            // Wake word was spoken but not within the head-up window; ignore
+            this.logger.debug('Wake word ignored: outside head-up activation window');
+            return;
+          }
+        } else if (!cleanedText) {
+          // Always-listening mode: wait until we have actual words to avoid
+          // reacting to silence/noise-only transcripts.
           return;
         }
       }
@@ -254,8 +264,8 @@ class TranscriptionManager {
     let timerDuration: number;
     //todo _____________
     if (transcriptionData.isFinal) {
-      // Check if the final transcript ends with a wake word
-      if (this.endsWithWakeWord(cleanedText)) {
+      // Check if the final transcript ends with a wake word when required
+      if (wakeWordRequired && this.endsWithWakeWord(cleanedText)) {
         // If it ends with just a wake word, wait longer for additional query text
         this.logger.debug("transcriptionData.isFinal: ends with wake word");
         timerDuration = 10000;
@@ -540,7 +550,9 @@ class TranscriptionManager {
     let isRunning = true;
 
     // Remove wake word from query
-    const query = this.removeWakeWord(rawCombinedText);
+    const query = this.isWakeWordRequired()
+      ? this.removeWakeWord(rawCombinedText)
+      : rawCombinedText.trim();
 
     if (query.trim().length === 0) {
       isRunning = false;
@@ -708,6 +720,9 @@ class TranscriptionManager {
    * Remove the wake word from the input text
    */
   private removeWakeWord(text: string): string {
+    if (!this.isWakeWordRequired()) {
+      return text.trim();
+    }
     // Escape each wake word for regex special characters
     const escapedWakeWords = explicitWakeWords.map(word =>
       word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -725,6 +740,9 @@ class TranscriptionManager {
    * Check if text ends with a wake word
    */
   private endsWithWakeWord(text: string): boolean {
+    if (!this.isWakeWordRequired()) {
+      return false;
+    }
     // Remove trailing punctuation and whitespace, lowercase
     const cleanedText = text
       .toLowerCase()
@@ -736,6 +754,14 @@ class TranscriptionManager {
       const pattern = new RegExp(`${word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i');
       return pattern.test(cleanedText);
     });
+  }
+
+  private isWakeWordRequired(): boolean {
+    const alwaysListeningSetting = this.session.settings.get<boolean>('always_listening');
+    if (typeof alwaysListeningSetting === 'boolean') {
+      return !alwaysListeningSetting;
+    }
+    return !this.alwaysListeningDefault;
   }
 
   /**
@@ -794,7 +820,7 @@ class MiraServer extends AppServer {
 
     // Create transcription manager for this session
     const transcriptionManager = new TranscriptionManager(
-      session, sessionId, userId, agent, cleanServerUrl
+      session, sessionId, userId, agent, cleanServerUrl, ALWAYS_LISTENING
     );
     this.transcriptionManagers.set(sessionId, transcriptionManager);
 

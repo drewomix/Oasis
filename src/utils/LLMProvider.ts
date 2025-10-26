@@ -1,7 +1,6 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { AzureChatOpenAI } from "@langchain/openai";
 import { ChatAnthropic } from "@langchain/anthropic";
-import { ChatVertexAI } from "@langchain/google-vertexai";
 
 const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || "";
 const AZURE_OPENAI_API_INSTANCE_NAME = process.env.AZURE_OPENAI_API_INSTANCE_NAME || "";
@@ -9,6 +8,8 @@ const AZURE_OPENAI_API_DEPLOYMENT_NAME = process.env.AZURE_OPENAI_API_DEPLOYMENT
 const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || "2023-05-15";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const LM_STUDIO_BASE_URL = process.env.LM_STUDIO_BASE_URL || "http://localhost:1234/v1";
+const LM_STUDIO_API_KEY = process.env.LM_STUDIO_API_KEY || "lm-studio";
 
 // LLM Configuration
 // Need to define LLMModel enum for the switch case in LLMProvider
@@ -23,6 +24,7 @@ export enum LLMService {
   AZURE = 'azure',
   OPENAI = 'openai',
   ANTHROPIC = 'anthropic',
+  LMSTUDIO = 'lmstudio',
 }
 
 export const LLM_MODEL = process.env.LLM_MODEL || LLMModel.GPT4;
@@ -78,6 +80,16 @@ export class LLMProvider {
         temperature: 0.3,
         maxTokens: 300,
         anthropicApiKey: ANTHROPIC_API_KEY,
+      });
+    } else if (provider === LLMService.LMSTUDIO) {
+      return new ChatOpenAI({
+        modelName: model,
+        temperature: 0.3,
+        maxTokens: 300,
+        openAIApiKey: LM_STUDIO_API_KEY,
+        configuration: {
+          baseURL: LM_STUDIO_BASE_URL,
+        },
       });
     } else {
       throw new Error(`Unsupported LLM provider: ${provider}`);
